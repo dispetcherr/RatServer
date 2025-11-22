@@ -81,7 +81,7 @@ const server = http.createServer((req, res) => {
                     timestamp: Date.now()
                 });
 
-                // Логирование в Discord
+                // Логирование в Discord только для важных событий
                 if (command === "user_chat") {
                     await sendDiscordMessage(
                         "💬 Чат игрока",
@@ -121,13 +121,8 @@ const server = http.createServer((req, res) => {
                         `**Тип:** ${args[0]}\n**Результат:** ${args[1]}`,
                         0x00ff00
                     );
-                } else if (command === "popup") {
-                    await sendDiscordMessage(
-                        "📢 Всплывающее сообщение",
-                        `**Текст:** ${args[0]}`,
-                        0x3498db
-                    );
                 }
+                // Команда popup НЕ логируется в вебхук для скрытности
 
                 res.end(JSON.stringify({ 
                     status: "OK",

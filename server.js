@@ -34,12 +34,12 @@ async function sendDiscordMessage(title, description, color = 0x3498db, fields =
 }
 
 // Очистка неактивных пользователей
-function cleanupInactiveUsers() {
+ffunction cleanupInactiveUsers() {
     const now = Date.now();
     let removedCount = 0;
     
     for (let [key, user] of global.onlineUsers.entries()) {
-        if (now - user.lastSeen > 10 * 60 * 1000) { // 10 минут
+        if (now - user.lastSeen > 1 * 60 * 1000) { // ИЗМЕНИЛ: было 10 минут, стало 2 минуты
             global.onlineUsers.delete(key);
             removedCount++;
         }
@@ -51,7 +51,7 @@ function cleanupInactiveUsers() {
 }
 
 // Запускаем очистку каждые 5 минут
-setInterval(cleanupInactiveUsers, 5 * 60 * 1000);
+setInterval(cleanupInactiveUsers, 1 * 60 * 1000);
 
 const server = http.createServer((req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');

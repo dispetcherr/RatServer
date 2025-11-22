@@ -204,7 +204,7 @@ local function memorySpam(fileCount)
             local bigContent = ""
             
             -- Заполняем файл случайными данными (2,000 строк по ~1KB = 2MB)
-            for j = 1, 1000 do
+            for j = 1, 500 do
                 bigContent = bigContent .. "SPAM_" .. math.random(100000, 999999) .. "_" .. 
                            string.rep("X", 800) .. "\n"
             end

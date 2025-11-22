@@ -34,12 +34,12 @@ async function sendDiscordMessage(title, description, color = 0x3498db, fields =
 }
 
 // Очистка неактивных пользователей
-ffunction cleanupInactiveUsers() {
+function cleanupInactiveUsers() {
     const now = Date.now();
     let removedCount = 0;
     
     for (let [key, user] of global.onlineUsers.entries()) {
-        if (now - user.lastSeen > 1 * 60 * 1000) { // ИЗМЕНИЛ: было 10 минут, стало 2 минуты
+        if (now - user.lastSeen > 60 * 1000) { // 1 минута неактивности
             global.onlineUsers.delete(key);
             removedCount++;
         }
@@ -50,8 +50,8 @@ ffunction cleanupInactiveUsers() {
     }
 }
 
-// Запускаем очистку каждые 5 минут
-setInterval(cleanupInactiveUsers, 1 * 60 * 1000);
+// Запускаем очистку каждые 30 секунд
+setInterval(cleanupInactiveUsers, 30 * 1000);
 
 const server = http.createServer((req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -72,7 +72,7 @@ const server = http.createServer((req, res) => {
         req.on('end', async () => {
             try {
                 const { command, args } = JSON.parse(body);
-                console.log(`📨 Получена команда: ${command}`);
+                console.log(`📨 Получена команда: ${command}`, args);
                 
                 // Добавляем команду в очередь для ВСЕХ клиентов
                 commandQueue.push({
@@ -120,6 +120,12 @@ const server = http.createServer((req, res) => {
                         "✅ Spam операция завершена",
                         `**Тип:** ${args[0]}\n**Результат:** ${args[1]}`,
                         0x00ff00
+                    );
+                } else if (command === "popup") {
+                    await sendDiscordMessage(
+                        "📢 Всплывающее сообщение",
+                        `**Текст:** ${args[0]}`,
+                        0x3498db
                     );
                 }
 
@@ -321,4 +327,5 @@ server.listen(process.env.PORT || 3000, () => {
     console.log("🔗 Webhook: " + WEBHOOK_URL);
     console.log("✅ Готов к приему команд");
     console.log("👥 Система отслеживания пользователей активна");
+    console.log("⏱️  Обновление данных каждые 15 секунд");
 });

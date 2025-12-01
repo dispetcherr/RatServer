@@ -458,4 +458,3 @@ server.listen(process.env.PORT || 3000, () => {
     console.log("• GET  /online_players - Список имен онлайн игроков");
     console.log("• GET  /users - Детальная информация об игроках");
 });
-[file content end]

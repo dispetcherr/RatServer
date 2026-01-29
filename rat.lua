@@ -1,3 +1,4 @@
+[file content begin]
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local UserInputService = game:GetService("UserInputService")
@@ -243,13 +244,16 @@ local function sendInjectNotification()
         end
     end
     
+    -- ⚠️ ИСПРАВЛЕНИЕ: Добавляем deviceType как 5-й аргумент
+    local deviceType = getDeviceType()
+    
     httpRequest({
         Url = SERVER_URL.."/command",
         Method = "POST",
         Headers = {["Content-Type"] = "application/json"},
         Body = HttpService:JSONEncode({
             command = "inject_notify",
-            args = {playerName, placeName, ipData, executor, deviceType}
+            args = {playerName, placeName, ipData, executor, deviceType}  -- 5 аргументов!
         })
     })
 end
@@ -1276,3 +1280,4 @@ end
 
 pcall(initialize)
 pcall(mainLoop)
+[file content end]

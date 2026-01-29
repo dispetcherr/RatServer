@@ -1,4 +1,3 @@
-[file content begin]
 const express = require('express');
 const fetch = require('node-fetch');
 const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
@@ -898,4 +897,3 @@ process.on('uncaughtException', (err) => {
 process.on('unhandledRejection', (reason, promise) => {
     console.error('❌ Необработанный промис:', reason);
 });
-[file content end]

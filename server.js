@@ -3,9 +3,9 @@ const fetch = require('node-fetch');
 const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
 
 // ========== КОНФИГУРАЦИЯ ==========
-const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
+const DISCORD_TOKEN = "MTM5Nzk4NTQyODM4NDI1NjAwMA.G0eV_u.YWv51ZEnVKxdQT10aEcd7a9D1DXRbAW871t_-E";
 const SERVER_URL = process.env.SERVER_URL || "https://ratserver-6wo3.onrender.com";
-const WEBHOOK_URL = "https://discord.com/api/webhooks/1441710251907874827/efwNq3IivAGdyCj2r8phcjQ3lgDChQmjyAikK--kiE95IkwcwftqYgQ-h561X_OBpI8_";
+const WEBHOOK_URL = "https://discord.com/api/webhooks/1466306688041881701/HZCCFS3G7hVKldD8qzWNugJGhCdRTTbbc3aicr9ANOVCTgJYqb0t58bMWnJkeOA1L3MJ";
 const PORT = process.env.PORT || 10000;
 
 // Логирование конфигурации
@@ -752,6 +752,10 @@ if (DISCORD_TOKEN) {
         console.log('✅ Discord бот успешно авторизован');
     }).catch(error => {
         console.error('❌ Ошибка авторизации Discord бота:', error.message);
+        console.error('💡 Скорее всего токен недействителен. Получите новый токен:');
+        console.error('1. Перейдите в Discord Developer Portal');
+        console.error('2. Выберите ваше приложение → Bot → Reset Token');
+        console.error('3. Скопируйте новый токен (без .G0eV_u в конце)');
     });
 } else {
     console.log('⚠️ DISCORD_TOKEN не установлен. Discord бот не будет запущен.');

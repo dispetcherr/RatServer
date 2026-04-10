@@ -314,18 +314,52 @@ if (DISCORD_TOKEN) {
         else if (command === 'help') {
             const embed = new EmbedBuilder()
                 .setTitle('Lua Rat Panel v3.2')
-                .setDescription(`**Добро пожаловать, ${targetCustomer.name}!**\n\nФормат: \`/команда [ник] [аргументы]\``)
+                .setDescription('**Полный список всех команд с поддержкой таргетинга**')
                 .setColor(0x7289da)
                 .addFields(
-                    { name: '👤 Управление', value: '`/kick`, `/freeze`, `/void`, `/spin`, `/fling`, `/sit`, `/dance`, `/tpgame`, `/cameralock`, `/camerashake`', inline: false },
-                    { name: '🔊 Аудио/Видео', value: '`/mute`, `/unmute`, `/playaudio`, `/blur`, `/screenshot`', inline: false },
-                    { name: '💬 Чат', value: '`/chat`, `/message`, `/fakeerror`', inline: false },
-                    { name: '👻 Скримеры', value: '`/jumpscare [1-2]` (1=Джефф, 2=Соник)', inline: false },
-                    { name: '⚙️ Системные', value: '`/execute`, `/keylog`, `/stopkeylog`, `/hardware`, `/hide`', inline: false },
-                    { name: '💥 Spam', value: '`/memory`, `/gallery`', inline: false },
-                    { name: '📊 Информация', value: '`/users`, `/status`, `/test`, `/print`', inline: false }
+                    { 
+                        name: '🎯 Формат команд:', 
+                        value: '• `/команда` - для всех игроков\n• `/команда ник` - для конкретного игрока\n• `/команда ник аргументы` - с параметрами\n\n**Примеры:**\n`/fakeerror текст` - для всех\n`/fakeerror PlayerName текст` - для игрока\n`/cameralock on` - для всех\n`/cameralock PlayerName off` - для игрока', 
+                        inline: false 
+                    },
+                    { 
+                        name: '👤 Управление игроком (10 команд)', 
+                        value: '`/tpgame [ник] <id места>`\n`/kick [ник] <причина>`\n`/freeze [ник] <секунды>`\n`/void [ник]`\n`/spin [ник]`\n`/fling [ник]`\n`/sit [ник]`\n`/dance [ник]`\n`/cameralock [ник] <on/off>`\n`/camerashake [ник] <секунды> <интенсивность>`', 
+                        inline: false 
+                    },
+                    { 
+                        name: '🔊 Аудио/Видео (5 команд)', 
+                        value: '`/mute [ник]`\n`/unmute [ник]`\n`/playaudio [ник] <id>`\n`/blur [ник] <секунды>`\n`/screenshot [ник]`', 
+                        inline: false 
+                    },
+                    { 
+                        name: '💬 Чат (2 команды)', 
+                        value: '`/chat [ник]`\n`/message [ник] <текст>`', 
+                        inline: false 
+                    },
+                    { 
+                        name: '👻 Скримеры (1 команда)', 
+                        value: '`/jumpscare [ник] <тип>`\n**Типы:** 1=Джефф Килер, 2=Соник.exe', 
+                        inline: false 
+                    },
+                    { 
+                        name: '⚙️ Системные (6 команд)', 
+                        value: '`/execute [ник] <код>`\n`/fakeerror [ник] <текст>`\n`/keylog [ник]`\n`/stopkeylog [ник]`\n`/hardware [ник]`\n`/hide [ник]`', 
+                        inline: false 
+                    },
+                    { 
+                        name: '💥 Spam (2 команды)', 
+                        value: '`/memory [ник] <кол-во>`\n`/gallery [ник] <кол-во>`', 
+                        inline: false 
+                    },
+                    { 
+                        name: '👥 Информация (4 команды)', 
+                        value: '`/users` - онлайн игроки\n`/status` - статус системы\n`/test` - тест\n`/print` - проверка связи', 
+                        inline: false 
+                    }
                 )
-                .setFooter({ text: `Панель: ${targetCustomer.name} | 28 команд` });
+                .setFooter({ text: `Всего команд: 28 | Версия: 3.2.0` });
+            
             await message.reply({ embeds: [embed] });
         }
         

